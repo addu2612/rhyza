@@ -14,10 +14,12 @@
     "common-types-lib": "workspace:*",
     "ilp-domain-lib": "workspace:*",
     "ilp-implementations-lib": "workspace:*",
-    "implementations-lib": "workspace:*"
+    "implementations-lib": "workspace:*",
+    "ioredis": "~5.10.1"
   },
   "devDependencies": {
     "ilp-connector-service": "workspace:*",
+    "ilp-protocol-stream": "2.7.2-alpha.3",
     "tsx": "^4.19.3"
   }
 }

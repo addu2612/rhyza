@@ -10,6 +10,12 @@ import {
   IMessageProducerAcks
 } from 'common-types-lib';
 import {
+  ConnectionCloseFrame,
+  ErrorCode,
+  IlpPacketType,
+  Packet
+} from 'ilp-protocol-stream/dist/src/packet.js';
+import {
   ActivatePeerCmd,
   CreatePeerCmd,
   DeactivatePeerCmd,
@@ -35,7 +41,11 @@ import {
   StartRemoteQuoteCmd,
   ProcessFulfillPacketCmd,
   UpdatePeerCmd,
-  decodeInboundStreamPrepare
+  decodeInboundStreamPrepare,
+  encodeStreamQuoteReply,
+  encryptStreamData,
+  hmacSha256,
+  ENCRYPTION_KEY_STRING
 } from 'ilp-domain-lib';
 import {
   InMemoryPeerRepository,
@@ -85,6 +95,8 @@ const PEER: IPeer = {
   isActive: true
 };
 
+const TEST_QUOTE_SECRET = Buffer.alloc(32, 7).toString('base64url');
+
 const startQuote = () =>
   new StartRemoteQuoteCmd(
     {
@@ -94,7 +106,8 @@ const startQuote = () =>
       destinationIlpAddress: 'g.peer.bob',
       sourceAmount: '100',
       sourceAssetCode: 'USD',
-      sourceAssetScale: 2
+      sourceAssetScale: 2,
+      sharedSecret: TEST_QUOTE_SECRET
     },
     'req-1'
   );
@@ -104,10 +117,12 @@ async function startedHandler() {
   const consumer = new MockConsumer();
   const repo = new InMemoryPeerRepository([PEER]);
   const peeringClient = new KafkaPeeringClient(producer, new ConsoleLogger());
+  const fake = createFakeResolveStreamCredentials();
   const aggregate = new IlpPeerAggregate(
     repo,
     peeringClient,
-    createFakeResolveStreamCredentials().resolveStreamCredentials
+    fake.resolveStreamCredentials,
+    fake.streamServer
   );
   const handler = new IlpCommandHandler(
     consumer,
@@ -164,7 +179,8 @@ describe('IlpCommandHandler — peer creation/update', () => {
           destinationIlpAddress: 'g.peer.bob',
           sourceAmount: '50',
           sourceAssetCode: 'USD',
-          sourceAssetScale: 2
+          sourceAssetScale: 2,
+          sharedSecret: TEST_QUOTE_SECRET
         },
         'req-2'
       )
@@ -557,10 +573,12 @@ describe('IlpCommandHandler — remote payment sending', () => {
     const producer = new MockProducer();
     const consumer = new MockConsumer();
     const repo = new InMemoryPeerRepository([PEER]);
+    const fake = createFakeResolveStreamCredentials();
     const aggregate = new IlpPeerAggregate(
       repo,
       peeringClient,
-      createFakeResolveStreamCredentials().resolveStreamCredentials
+      fake.resolveStreamCredentials,
+      fake.streamServer
     );
     const handler = new IlpCommandHandler(
       consumer,
@@ -709,13 +727,23 @@ describe('IlpCommandHandler — remote quote sending', () => {
     assert.equal(dispatch.payload.paymentIntentId, 'intent-1');
     assert.equal(dispatch.payload.amount, '100');
     assert.ok(dispatch.payload.executionCondition.length > 0);
+    assert.ok(dispatch.payload.data, 'expected STREAM quote probe data');
     assert.ok(dispatch.payload.expiresAt);
   });
 
-  test('a peer reject carrying amounts yields a ILPQuoteReceivedEvent', async () => {
+  test('a peer reject carrying STREAM prepareAmount yields a ILPQuoteReceivedEvent', async () => {
     const { producer, consumer } = await startedHandler();
     await consumer.deliver([startQuote()]);
-    const packetId = dispatchedPacketId(producer);
+    const dispatch = producer.sent.find(
+      (m) => m.msgName === DispatchPreparePacketCmd.name
+    ) as DispatchPreparePacketCmd;
+    const packetId = dispatch.payload.packetId;
+    const replyData = encodeStreamQuoteReply({
+      sharedSecret: Buffer.from(TEST_QUOTE_SECRET, 'base64url'),
+      prepareData: Buffer.from(dispatch.payload.data as string, 'base64'),
+      prepareAmount: '95'
+    });
+    assert.ok(replyData);
 
     await consumer.deliver([
       new ProcessRejectPacketCmd({
@@ -725,7 +753,7 @@ describe('IlpCommandHandler — remote quote sending', () => {
         rejectCode: 'F99',
         rejectMessage: 'quote response',
         rejectedAt: new Date().toISOString(),
-        destinationAmount: '95'
+        data: replyData!.toString('base64')
       })
     ]);
 
@@ -737,6 +765,128 @@ describe('IlpCommandHandler — remote quote sending', () => {
     assert.equal(event.payload.quoteId, 'quote-1');
     assert.equal(event.payload.destinationAmount, '95');
     assert.equal(event.requestId, 'req-1');
+  });
+
+  test('a resolved quote leaves no shared secret behind in the store', async () => {
+    const { producer, consumer, repo } = await startedHandler();
+    await consumer.deliver([startQuote()]);
+    const dispatch = producer.sent.find(
+      (m) => m.msgName === DispatchPreparePacketCmd.name
+    ) as DispatchPreparePacketCmd;
+    const packetId = dispatch.payload.packetId;
+
+    const pending = await repo.fetchPacketById(packetId);
+    assert.ok(pending && pending.kind === 'QUOTE');
+    assert.equal(pending.sharedSecret, TEST_QUOTE_SECRET);
+
+    const replyData = encodeStreamQuoteReply({
+      sharedSecret: Buffer.from(TEST_QUOTE_SECRET, 'base64url'),
+      prepareData: Buffer.from(dispatch.payload.data as string, 'base64'),
+      prepareAmount: '95'
+    });
+    assert.ok(replyData);
+
+    await consumer.deliver([
+      new ProcessRejectPacketCmd({
+        peerId: 'peer-1',
+        paymentIntentId: 'intent-1',
+        packetId,
+        rejectCode: 'F99',
+        rejectMessage: 'quote response',
+        rejectedAt: new Date().toISOString(),
+        data: replyData!.toString('base64')
+      })
+    ]);
+
+    // The reply still decoded, so the secret was read before being dropped.
+    const received = producer.sent.find(
+      (m) => m.msgName === ILPQuoteReceivedEvent.name
+    ) as ILPQuoteReceivedEvent;
+    assert.equal(received.payload.destinationAmount, '95');
+
+    const terminal = await repo.fetchPacketById(packetId);
+    assert.ok(terminal && terminal.kind === 'QUOTE');
+    assert.equal(terminal.state, 'REJECTED');
+    assert.equal(
+      terminal.sharedSecret,
+      undefined,
+      'a terminal correlation must not keep a live STREAM key at rest'
+    );
+  });
+
+  test('a transient reject is not a rate, however well it decrypts', async () => {
+    const { producer, consumer } = await startedHandler();
+    await consumer.deliver([startQuote()]);
+    const dispatch = producer.sent.find(
+      (m) => m.msgName === DispatchPreparePacketCmd.name
+    ) as DispatchPreparePacketCmd;
+    const replyData = encodeStreamQuoteReply({
+      sharedSecret: Buffer.from(TEST_QUOTE_SECRET, 'base64url'),
+      prepareData: Buffer.from(dispatch.payload.data as string, 'base64'),
+      prepareAmount: '95'
+    });
+    assert.ok(replyData);
+
+    await consumer.deliver([
+      new ProcessRejectPacketCmd({
+        peerId: 'peer-1',
+        paymentIntentId: 'intent-1',
+        packetId: dispatch.payload.packetId,
+        rejectCode: 'T04',
+        rejectMessage: 'insufficient liquidity',
+        rejectedAt: new Date().toISOString(),
+        data: replyData!.toString('base64')
+      })
+    ]);
+
+    assert.equal(
+      producer.sent.filter((m) => m.msgName === ILPQuoteReceivedEvent.name)
+        .length,
+      0,
+      'a T-class reject means "ask again", not "here is the rate"'
+    );
+    assert.ok(
+      producer.sent.find((m) => m.msgName === ILPQuoteFailedEvent.name)
+    );
+  });
+
+  test('a receiver that closes the connection has not quoted us', async () => {
+    const { producer, consumer } = await startedHandler();
+    await consumer.deliver([startQuote()]);
+    const packetId = dispatchedPacketId(producer);
+
+    const closed = new Packet(1, IlpPacketType.Reject, '95', [
+      new ConnectionCloseFrame(ErrorCode.ApplicationError, 'no thanks')
+    ]);
+    const replyData = encryptStreamData(
+      hmacSha256(
+        Buffer.from(TEST_QUOTE_SECRET, 'base64url'),
+        ENCRYPTION_KEY_STRING
+      ),
+      closed._serialize()
+    );
+
+    await consumer.deliver([
+      new ProcessRejectPacketCmd({
+        peerId: 'peer-1',
+        paymentIntentId: 'intent-1',
+        packetId,
+        rejectCode: 'F99',
+        rejectMessage: 'application error',
+        rejectedAt: new Date().toISOString(),
+        data: replyData.toString('base64')
+      })
+    ]);
+
+    // F99 plus a readable amount, but the ConnectionClose makes it a refusal.
+    assert.equal(
+      producer.sent.filter((m) => m.msgName === ILPQuoteReceivedEvent.name)
+        .length,
+      0
+    );
+    assert.ok(
+      producer.sent.find((m) => m.msgName === ILPQuoteFailedEvent.name)
+    );
   });
 
   test('a peer reject without amounts yields a ILPQuoteFailedEvent', async () => {
@@ -825,7 +975,8 @@ describe('KafkaPeeringClient', () => {
       sourceAmount: '250',
       sourceAssetCode: 'USD',
       sourceAssetScale: 2,
-      expiresAt: new Date().toISOString()
+      expiresAt: new Date().toISOString(),
+      data: Buffer.from('stream-quote-probe').toString('base64')
     });
 
     assert.equal(producer.sent.length, 1);
@@ -839,7 +990,10 @@ describe('KafkaPeeringClient', () => {
       Buffer.from(cmd.payload.executionCondition, 'base64').length,
       32
     );
-    assert.equal(cmd.payload.data, undefined);
+    assert.equal(
+      cmd.payload.data,
+      Buffer.from('stream-quote-probe').toString('base64')
+    );
   });
 
   test('maps a PAYMENT dispatch using the provided STREAM condition and data', async () => {

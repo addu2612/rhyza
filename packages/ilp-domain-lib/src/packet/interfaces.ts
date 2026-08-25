@@ -18,16 +18,15 @@ interface QuotePacketCorrelation extends BasePacketCorrelation {
   kind: 'QUOTE';
   quoteId: string;
   requestId: string;
+  // Outbound quote probes store the STREAM shared secret to decrypt the
+  // remote `prepareAmount` from the reject `data`.
+  sharedSecret?: string;
 }
 
 interface PaymentPacketCorrelation extends BasePacketCorrelation {
   kind: 'PAYMENT';
   paymentId: string;
   requestId: string;
-  // Optional because this type covers both directions. Inbound fulfillable
-  // packets store the base64 STREAM fulfillment here for a later fulfill
-  // reply. Outgoing prepares leave it unset.
-  fulfillment?: string;
   // Outbound prepares store the base64 execution condition so a later
   // fulfill can be hashed against it.
   executionCondition?: string;
@@ -37,12 +36,22 @@ export type IPacketCorrelation =
   | QuotePacketCorrelation
   | PaymentPacketCorrelation;
 
+export interface InboundPrepareSnapshot {
+  destinationIlpAddress: string;
+  amount: string;
+  expiresAt: string;
+  executionCondition: string;
+  data: string;
+}
+
 // Connector-issued id for answering an inbound prepare later. Domain stores
 // and forwards it and the connector resolves how to deliver on the wire.
 export interface IInboundPacketReplyHandle {
   packetId: string;
   peerId: string;
   replyHandle: string;
+  inboundPrepare: InboundPrepareSnapshot;
+  expiresAt: string;
 }
 
 // To be implemented by the adapter for sending packets.
@@ -67,7 +76,7 @@ export interface RejectDispatch extends InboundReplyDispatch {
   rejectCode: string;
   rejectMessage?: string;
   triggeredBy?: string;
-  destinationAmount?: string;
+  data?: string;
 }
 
 export type PacketDispatch = QuoteDispatch | PaymentDispatch;
@@ -83,6 +92,7 @@ export interface QuoteDispatch {
   sourceAssetCode: string;
   sourceAssetScale: number;
   expiresAt: string;
+  data: string;
 }
 
 export interface PaymentDispatch {

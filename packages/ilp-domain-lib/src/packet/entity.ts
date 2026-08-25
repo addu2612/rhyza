@@ -11,6 +11,7 @@ export class PacketCorrelation {
     expiresAt: Date;
     quoteId: string;
     requestId: string;
+    sharedSecret?: string;
   }): PacketCorrelation {
     return new PacketCorrelation({ ...args, kind: 'QUOTE', state: 'PENDING' });
   }
@@ -22,7 +23,6 @@ export class PacketCorrelation {
     expiresAt: Date;
     paymentId: string;
     requestId: string;
-    fulfillment?: string;
     executionCondition?: string;
   }): PacketCorrelation {
     return new PacketCorrelation({
@@ -63,7 +63,15 @@ export class PacketCorrelation {
     }
   }
 
+  // Every transition here is to a terminal state, so the STREAM shared secret
+  // has done its job: it exists only to decrypt the probe reply, which has
+  // either arrived or never will. Dropping it keeps a live key out of a record
+  // that outlives the 30-second packet by design.
   private withState(state: PacketState): PacketCorrelation {
-    return new PacketCorrelation({ ...this._data, state });
+    const next = { ...this._data, state };
+    if (next.kind === 'QUOTE') {
+      delete next.sharedSecret;
+    }
+    return new PacketCorrelation(next);
   }
 }

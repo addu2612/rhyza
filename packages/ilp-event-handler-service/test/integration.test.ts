@@ -13,6 +13,8 @@ import {
 } from 'common-types-lib';
 import {
   createFakeResolveStreamCredentials,
+  decodeStreamPrepareAmount,
+  encodeOutgoingStreamPrepare,
   IlpPeerAggregate,
   IPeer,
   ILPQuoteRequestReceivedEvent
@@ -155,6 +157,22 @@ const probe = (
   ...overrides
 });
 
+const streamQuoteProbe = (
+  destinationIlpAddress: string,
+  sharedSecret: Buffer,
+  overrides: Partial<WirePrepare> = {}
+): WirePrepare => {
+  const encoded = encodeOutgoingStreamPrepare({
+    sharedSecret,
+    minDestinationAmount: '0'
+  });
+  return probe(destinationIlpAddress, {
+    data: encoded.data.toString('base64'),
+    executionCondition: Buffer.alloc(32).toString('base64'),
+    ...overrides
+  });
+};
+
 // Wires the connector, ILP command handler, ILP event handler and a test
 // Payments BC fixture together over the bus, mirroring the deployed services.
 async function wireSystem(calculator?: IQuoteCalculator) {
@@ -186,7 +204,8 @@ async function wireSystem(calculator?: IQuoteCalculator) {
   const aggregate = new IlpPeerAggregate(
     repo,
     new KafkaPeeringClient(producer, logger),
-    fake.resolveStreamCredentials
+    fake.resolveStreamCredentials,
+    fake.streamServer
   );
   const cmdHandler = new IlpCommandHandler(
     bus.consumer(),
@@ -207,7 +226,12 @@ async function wireSystem(calculator?: IQuoteCalculator) {
   );
   await paymentsBcFixture.start();
 
-  return { bus, transport, destinationIlpAddress: credentials.ilpAddress };
+  return {
+    bus,
+    transport,
+    destinationIlpAddress: credentials.ilpAddress,
+    sharedSecret: credentials.sharedSecret
+  };
 }
 
 const lastReject = (
@@ -234,13 +258,12 @@ const requestReceivedEvents = (bus: InMemoryBus) =>
   );
 
 describe('ILP receiving quote flow over Kafka topics', () => {
-  test('inbound probe -> request received -> Payments BC quote -> reject', async () => {
-    const { bus, transport, destinationIlpAddress } = await wireSystem(
-      new FixedRateQuoteCalculator(95n, 100n)
-    );
+  test('inbound probe -> request received -> Payments BC quote -> STREAM reject', async () => {
+    const { bus, transport, destinationIlpAddress, sharedSecret } =
+      await wireSystem(new FixedRateQuoteCalculator(95n, 100n));
 
     await transport.simulateInboundPrepare(
-      probe(destinationIlpAddress),
+      streamQuoteProbe(destinationIlpAddress, sharedSecret),
       TEST_CALLBACK_URL
     );
 
@@ -248,19 +271,22 @@ describe('ILP receiving quote flow over Kafka topics', () => {
     assert.equal(requestReceivedEvents(bus).length, 1);
 
     // The probe was answered on the wire with a reject carrying the calculated
-    // destination amount (F99 = quote response).
+    // destination amount in STREAM prepareAmount (F99 = quote response).
     const reject = lastReject(transport);
     assert.equal(reject.peerId, 'peer-1');
     assert.equal(reject.response.packetId, 'packet-in-1');
     assert.equal(reject.response.rejectCode, 'F99');
     assert.ok(
       reject.response.data,
-      'expected the destination amount on the reject'
+      'expected STREAM quote reply data on the reject'
     );
-    const decoded = JSON.parse(
-      Buffer.from(reject.response.data as string, 'base64').toString()
+    assert.equal(
+      decodeStreamPrepareAmount(
+        sharedSecret,
+        Buffer.from(reject.response.data as string, 'base64')
+      ),
+      '95'
     );
-    assert.equal(decoded.destinationAmount, '95');
   });
 
   test('an unresolved peer is answered with a generic reject and no event', async () => {

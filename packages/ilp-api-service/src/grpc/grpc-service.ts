@@ -34,7 +34,7 @@ import {
   ILPPeerUpdatedEvent,
   ILPPeerUpdateFailedEvent,
   IPeer,
-  IPeerRepository
+  IPeerReader
 } from 'ilp-domain-lib';
 import { CreatePeerCmd, UpdatePeerCmd } from 'ilp-domain-lib';
 import {
@@ -58,7 +58,7 @@ export class IlpServiceServer {
   private readonly _server: grpc.Server;
   private readonly _msgProducer: IMessageProducer;
   private readonly _msgConsumer: IMessageConsumer;
-  private readonly _peerRepo: IPeerRepository;
+  private readonly _peerRepo: IPeerReader;
   private readonly _responseTimeoutMs: number;
   private readonly _responseMap: Map<string, PendingResponse> = new Map();
   private readonly _logger: ILogger;
@@ -69,7 +69,7 @@ export class IlpServiceServer {
     serverUrl: string,
     msgProducer: IMessageProducer,
     msgConsumer: IMessageConsumer,
-    peerRepo: IPeerRepository,
+    peerRepo: IPeerReader,
     logger: ILogger,
     responseTimeoutMs: number = DEFAULT_RESPONSE_TIMEOUT_MS
   ) {

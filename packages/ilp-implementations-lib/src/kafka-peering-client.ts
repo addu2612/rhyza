@@ -29,7 +29,7 @@ export class KafkaPeeringClient implements IPeeringClient {
         : Buffer.from(crypto.getRandomValues(new Uint8Array(32))).toString(
             'base64'
           ),
-      data: isPayment ? input.data : undefined
+      data: input.data
     });
 
     this._logger.debug(
@@ -46,13 +46,7 @@ export class KafkaPeeringClient implements IPeeringClient {
       rejectCode: input.rejectCode,
       rejectMessage: input.rejectMessage,
       triggeredBy: input.triggeredBy,
-      // For a quote response we put the destination amount here as a stand-in for STREAM reply frames.
-      data:
-        input.destinationAmount !== undefined
-          ? Buffer.from(
-              JSON.stringify({ destinationAmount: input.destinationAmount })
-            ).toString('base64')
-          : undefined
+      data: input.data
     });
 
     this._logger.debug(

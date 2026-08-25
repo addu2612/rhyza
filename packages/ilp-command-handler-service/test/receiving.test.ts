@@ -1,7 +1,7 @@
 'use strict';
 
 import assert from 'node:assert';
-import { createHash, randomBytes } from 'node:crypto';
+import { randomBytes } from 'node:crypto';
 import { describe, test } from 'node:test';
 import {
   ConsoleLogger,
@@ -11,14 +11,22 @@ import {
   IMessageProducerAcks
 } from 'common-types-lib';
 import {
+  ConnectionCloseFrame,
+  ErrorCode,
+  IlpPacketType,
+  Packet
+} from 'ilp-protocol-stream/dist/src/packet.js';
+import {
   DispatchRejectPacketCmd,
+  ExpirePacketCmd,
   encryptStreamData,
+  encodeOutgoingStreamPrepare,
   createFakeResolveStreamCredentials,
   hmacSha256,
   IlpPeerAggregate,
   IPeer,
   ENCRYPTION_KEY_STRING,
-  FULFILLMENT_GENERATION_STRING,
+  decodeStreamPrepareAmount,
   ProcessPreparePacketCmd,
   ILPPaymentFailedEvent,
   ILPQuoteRequestReceivedEvent,
@@ -84,18 +92,46 @@ function fulfillablePrepareData(sharedSecret: Buffer): {
   executionCondition: string;
   fulfillment: Buffer;
 } {
-  const encryptionKey = hmacSha256(sharedSecret, ENCRYPTION_KEY_STRING);
-  const dataBuf = encryptStreamData(encryptionKey, Buffer.from('stream-money'));
-  const fulfillmentKey = hmacSha256(
+  const encoded = encodeOutgoingStreamPrepare({
     sharedSecret,
-    FULFILLMENT_GENERATION_STRING
-  );
-  const fulfillment = hmacSha256(fulfillmentKey, dataBuf);
-  const executionCondition = createHash('sha256').update(fulfillment).digest();
+    minDestinationAmount: '100'
+  });
   return {
-    data: dataBuf.toString('base64'),
-    executionCondition: executionCondition.toString('base64'),
-    fulfillment
+    data: encoded.data.toString('base64'),
+    executionCondition: encoded.executionCondition.toString('base64'),
+    fulfillment: encoded.fulfillment
+  };
+}
+
+// A prepare whose STREAM packet carries ConnectionClose: a peer walking away
+// mid-connection rather than probing for a rate.
+function connectionClosePrepare(sharedSecret: Buffer): {
+  data: string;
+  executionCondition: string;
+} {
+  const packet = new Packet(1, IlpPacketType.Prepare, '0', [
+    new ConnectionCloseFrame(ErrorCode.NoError, 'bye')
+  ]);
+  return {
+    data: encryptStreamData(
+      hmacSha256(sharedSecret, ENCRYPTION_KEY_STRING),
+      packet._serialize()
+    ).toString('base64'),
+    executionCondition: randomBytes(32).toString('base64')
+  };
+}
+
+function unfulfillableStreamPrepare(
+  sharedSecret: Buffer,
+  minDestinationAmount: string = '0'
+): { data: string; executionCondition: string } {
+  const encoded = encodeOutgoingStreamPrepare({
+    sharedSecret,
+    minDestinationAmount
+  });
+  return {
+    data: encoded.data.toString('base64'),
+    executionCondition: randomBytes(32).toString('base64')
   };
 }
 
@@ -115,7 +151,8 @@ async function startedHandler(
   const aggregate = new IlpPeerAggregate(
     repo,
     peeringClient,
-    fake.resolveStreamCredentials
+    fake.resolveStreamCredentials,
+    fake.streamServer
   );
   const handler = new IlpCommandHandler(
     consumer,
@@ -149,9 +186,18 @@ const rejectFor = (producer: MockProducer): DispatchRejectPacketCmd =>
 
 describe('IlpCommandHandler — remote quote receiving', () => {
   test('an inbound probe publishes a ILPQuoteRequestReceivedEvent with paymentIntentId', async () => {
-    const { producer, consumer, credentials } = await startedHandler();
+    const { producer, consumer, credentials, fake } = await startedHandler();
     assert.ok(credentials);
-    await consumer.deliver([inboundProbe(credentials!.ilpAddress)]);
+    const resolved = await fake.resolveStreamCredentials(
+      credentials.ilpAddress
+    );
+    assert.ok(resolved);
+    await consumer.deliver([
+      inboundProbe(
+        credentials.ilpAddress,
+        unfulfillableStreamPrepare(resolved.sharedSecret)
+      )
+    ]);
 
     const event = producer.sent.find(
       (m) => m.msgName === ILPQuoteRequestReceivedEvent.name
@@ -176,8 +222,17 @@ describe('IlpCommandHandler — remote quote receiving', () => {
   });
 
   test('a calculated quote produces a reject carrying the amount', async () => {
-    const { producer, consumer, credentials } = await startedHandler();
-    await consumer.deliver([inboundProbe(credentials.ilpAddress)]);
+    const { producer, consumer, credentials, fake } = await startedHandler();
+    const resolved = await fake.resolveStreamCredentials(
+      credentials.ilpAddress
+    );
+    assert.ok(resolved);
+    await consumer.deliver([
+      inboundProbe(
+        credentials.ilpAddress,
+        unfulfillableStreamPrepare(resolved.sharedSecret)
+      )
+    ]);
     await consumer.deliver([
       new RespondToRemoteQuoteCmd({
         peerId: 'peer-1',
@@ -194,11 +249,14 @@ describe('IlpCommandHandler — remote quote receiving', () => {
     assert.equal(reject.payload.packetId, 'packet-in-1');
     assert.equal(reject.payload.replyHandle, TEST_REPLY_HANDLE);
     assert.equal(reject.payload.rejectCode, 'F99');
-    assert.ok(reject.payload.data, 'expected the destination amount in data');
-    const decoded = JSON.parse(
-      Buffer.from(reject.payload.data as string, 'base64').toString()
+    assert.ok(reject.payload.data, 'expected STREAM quote reply data');
+    assert.equal(
+      decodeStreamPrepareAmount(
+        resolved.sharedSecret,
+        Buffer.from(reject.payload.data as string, 'base64')
+      ),
+      '95'
     );
-    assert.equal(decoded.destinationAmount, '95');
   });
 
   test('an invalid amount yields F03 and no event', async () => {
@@ -269,8 +327,17 @@ describe('IlpCommandHandler — remote quote receiving', () => {
   });
 
   test('a missing calculated quote yields a generic reject', async () => {
-    const { producer, consumer, credentials } = await startedHandler();
-    await consumer.deliver([inboundProbe(credentials.ilpAddress)]);
+    const { producer, consumer, credentials, fake } = await startedHandler();
+    const resolved = await fake.resolveStreamCredentials(
+      credentials.ilpAddress
+    );
+    assert.ok(resolved);
+    await consumer.deliver([
+      inboundProbe(
+        credentials.ilpAddress,
+        unfulfillableStreamPrepare(resolved.sharedSecret)
+      )
+    ]);
     await consumer.deliver([
       new RespondToRemoteQuoteCmd({
         peerId: 'peer-1',
@@ -285,8 +352,17 @@ describe('IlpCommandHandler — remote quote receiving', () => {
   });
 
   test('the receiving path never touches payment-receiving liquidity logic', async () => {
-    const { producer, consumer, credentials } = await startedHandler();
-    await consumer.deliver([inboundProbe(credentials.ilpAddress)]);
+    const { producer, consumer, credentials, fake } = await startedHandler();
+    const resolved = await fake.resolveStreamCredentials(
+      credentials.ilpAddress
+    );
+    assert.ok(resolved);
+    await consumer.deliver([
+      inboundProbe(
+        credentials.ilpAddress,
+        unfulfillableStreamPrepare(resolved.sharedSecret)
+      )
+    ]);
     await consumer.deliver([
       new RespondToRemoteQuoteCmd({
         peerId: 'peer-1',
@@ -309,7 +385,7 @@ describe('IlpCommandHandler — remote quote receiving', () => {
       credentials.ilpAddress
     );
     assert.ok(resolved);
-    const { data, executionCondition, fulfillment } = fulfillablePrepareData(
+    const { data, executionCondition } = fulfillablePrepareData(
       resolved!.sharedSecret
     );
 
@@ -346,11 +422,62 @@ describe('IlpCommandHandler — remote quote receiving', () => {
     assert.ok(stored);
     assert.equal(stored!.kind, 'PAYMENT');
     assert.equal(stored!.paymentIntentId, PAYMENT_INTENT_ID);
-    assert.equal(stored!.fulfillment, fulfillment.toString('base64'));
     assert.equal(stored!.paymentId, received.payload.paymentId);
+
+    // The reply handle is the sole owner of the prepare snapshot.
+    const handle = await repo.fetchInboundReplyHandle('packet-pay-1');
+    assert.ok(handle);
+    assert.equal(handle.inboundPrepare.amount, '100');
+    assert.equal(handle.inboundPrepare.data, data);
   });
 
-  test('STREAM verification failure with resolved destination stays on quote path', async () => {
+  test('expiring an inbound packet clears the reply handle it can never answer', async () => {
+    const { producer, consumer, repo, credentials, fake } =
+      await startedHandler();
+    const resolved = await fake.resolveStreamCredentials(
+      credentials.ilpAddress
+    );
+    assert.ok(resolved);
+    const { data, executionCondition } = fulfillablePrepareData(
+      resolved!.sharedSecret
+    );
+
+    await consumer.deliver([
+      inboundProbe(credentials.ilpAddress, {
+        packetId: 'packet-expire-1',
+        data,
+        executionCondition
+      })
+    ]);
+
+    const handle = await repo.fetchInboundReplyHandle('packet-expire-1');
+    assert.ok(handle, 'expected a reply handle awaiting Payments');
+    assert.ok(
+      handle!.expiresAt,
+      'the handle needs a deadline for the store to reap orphans'
+    );
+
+    // Payments never answers and the expiry worker steps in.
+    await consumer.deliver([
+      new ExpirePacketCmd({
+        peerId: 'peer-1',
+        packetId: 'packet-expire-1',
+        expiredAt: new Date().toISOString()
+      })
+    ]);
+
+    assert.ok(
+      producer.sent.find((m) => m.msgName === ILPPaymentFailedEvent.name),
+      'expected the payment to be reported as failed'
+    );
+    assert.equal(
+      await repo.fetchInboundReplyHandle('packet-expire-1'),
+      undefined,
+      'an expired packet must not leave its prepare snapshot behind'
+    );
+  });
+
+  test('invalid STREAM data with resolved destination yields F06', async () => {
     const { producer, consumer, credentials, fake } = await startedHandler();
     const resolved = await fake.resolveStreamCredentials(
       credentials.ilpAddress
@@ -372,19 +499,18 @@ describe('IlpCommandHandler — remote quote receiving', () => {
       })
     ]);
 
-    const event = producer.sent.find(
-      (m) => m.msgName === ILPQuoteRequestReceivedEvent.name
-    ) as ILPQuoteRequestReceivedEvent;
-    assert.ok(event);
-    assert.equal(event.payload.paymentIntentId, PAYMENT_INTENT_ID);
+    const reject = rejectFor(producer);
+    assert.ok(reject, 'expected an F06 reject');
+    assert.equal(reject.payload.rejectCode, 'F06');
     assert.equal(
-      producer.sent.filter((m) => m.msgName === DispatchRejectPacketCmd.name)
-        .length,
+      producer.sent.filter(
+        (m) => m.msgName === ILPQuoteRequestReceivedEvent.name
+      ).length,
       0
     );
   });
 
-  test('fulfillable inbound payment dispatches stored fulfillment and emits sent event', async () => {
+  test('fulfillable inbound payment dispatches STREAM fulfill data and emits sent event', async () => {
     const { producer, consumer, credentials, fake } = await startedHandler();
     const resolved = await fake.resolveStreamCredentials(
       credentials.ilpAddress
@@ -428,6 +554,17 @@ describe('IlpCommandHandler — remote quote receiving', () => {
       fulfillCmd.payload.fulfillment,
       fulfillment.toString('base64')
     );
+    assert.ok(
+      fulfillCmd.payload.data,
+      'expected encrypted STREAM fulfill data'
+    );
+    assert.equal(
+      decodeStreamPrepareAmount(
+        resolved!.sharedSecret,
+        Buffer.from(fulfillCmd.payload.data as string, 'base64')
+      ),
+      '100'
+    );
 
     const sent = producer.sent.find(
       (m) => m.msgName === ILPPaymentFulfillmentSentEvent.name
@@ -435,6 +572,77 @@ describe('IlpCommandHandler — remote quote receiving', () => {
     assert.ok(sent);
     assert.equal(sent.payload.inboundPaymentId, 'rp-1');
     assert.equal(sent.payload.packetId, 'packet-pay-2');
+  });
+
+  test('a peer closing the connection is rejected, not read as a quote probe', async () => {
+    const { producer, consumer, repo, credentials, fake } =
+      await startedHandler();
+    const resolved = await fake.resolveStreamCredentials(
+      credentials.ilpAddress
+    );
+    assert.ok(resolved);
+
+    await consumer.deliver([
+      inboundProbe(credentials.ilpAddress, {
+        packetId: 'packet-closed',
+        ...connectionClosePrepare(resolved!.sharedSecret)
+      })
+    ]);
+
+    // stream-receiver answers a ConnectionClose with F99 — the same code we use
+    // for a quote answer — so routing on the code alone invents a phantom quote.
+    assert.equal(
+      producer.sent.filter(
+        (m) => m.msgName === ILPQuoteRequestReceivedEvent.name
+      ).length,
+      0
+    );
+    const reject = rejectFor(producer);
+    assert.ok(reject, 'expected the close to be rejected back to the peer');
+    assert.equal(reject.payload.rejectCode, 'F99');
+    assert.equal(
+      await repo.fetchInboundReplyHandle('packet-closed'),
+      undefined,
+      'a closed connection must not leave a reply handle awaiting Payments'
+    );
+  });
+
+  test('reject inbound payment keeps the reject code Payments chose', async () => {
+    const { producer, consumer, credentials, fake } = await startedHandler();
+    const resolved = await fake.resolveStreamCredentials(
+      credentials.ilpAddress
+    );
+    assert.ok(resolved);
+    const { data, executionCondition } = fulfillablePrepareData(
+      resolved!.sharedSecret
+    );
+
+    await consumer.deliver([
+      inboundProbe(credentials.ilpAddress, {
+        packetId: 'packet-pay-final',
+        data,
+        executionCondition
+      })
+    ]);
+    producer.sent.length = 0;
+
+    await consumer.deliver([
+      new RejectInboundPaymentCmd({
+        peerId: 'peer-1',
+        packetId: 'packet-pay-final',
+        paymentIntentId: PAYMENT_INTENT_ID,
+        inboundPaymentId: 'rp-fail-2',
+        requestId: crypto.randomUUID(),
+        rejectCode: 'F06',
+        rejectMessage: 'receiver refused'
+      })
+    ]);
+
+    const reject = rejectFor(producer);
+    assert.ok(reject);
+    // Not collapsed into temporaryDecline's hardcoded T00.
+    assert.equal(reject.payload.rejectCode, 'F06');
+    assert.ok(reject.payload.data, 'expected encrypted STREAM reject data');
   });
 
   test('fulfill inbound payment fails when packet correlation is missing', async () => {
@@ -502,6 +710,14 @@ describe('IlpCommandHandler — remote quote receiving', () => {
     assert.equal(reject.payload.packetId, 'packet-pay-reject');
     assert.equal(reject.payload.replyHandle, TEST_REPLY_HANDLE);
     assert.equal(reject.payload.rejectCode, 'T00');
+    assert.ok(reject.payload.data, 'expected STREAM reject data after accept');
+    assert.equal(
+      decodeStreamPrepareAmount(
+        resolved!.sharedSecret,
+        Buffer.from(reject.payload.data as string, 'base64')
+      ),
+      '100'
+    );
     assert.equal(
       await repo.fetchInboundReplyHandle('packet-pay-reject'),
       undefined

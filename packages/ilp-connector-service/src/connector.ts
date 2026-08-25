@@ -193,7 +193,7 @@ export class IlpConnector {
         rejectCode: response.rejectCode,
         rejectMessage: response.rejectMessage ?? '',
         rejectedAt: new Date().toISOString(),
-        destinationAmount: destinationAmountFromWireData(response.data)
+        data: response.data
       })
     );
   }
@@ -224,27 +224,5 @@ export class IlpConnector {
         data: prepare.data
       })
     );
-  }
-}
-
-// Pulls destinationAmount out of reject `data` so ProcessRejectPacketCmd
-// can finish a quote. Until STREAM decode is added, KafkaPeeringClient
-// packs that amount as base64 JSON in `data` instead of STREAM reply frames.
-// Missing or junk data just means "no amount" and the aggregate fails the quote.
-function destinationAmountFromWireData(
-  data: string | undefined
-): string | undefined {
-  if (!data) {
-    return undefined;
-  }
-  try {
-    const parsed = JSON.parse(Buffer.from(data, 'base64').toString()) as {
-      destinationAmount?: unknown;
-    };
-    return typeof parsed.destinationAmount === 'string'
-      ? parsed.destinationAmount
-      : undefined;
-  } catch {
-    return undefined;
   }
 }

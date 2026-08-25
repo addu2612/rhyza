@@ -148,7 +148,7 @@ describe('IlpConnector', () => {
     assert.equal(cmd.payload.paymentIntentId, 'intent-1');
     assert.equal(cmd.payload.packetId, 'packet-1');
     assert.equal(cmd.payload.rejectCode, 'F99');
-    assert.equal(cmd.payload.destinationAmount, undefined);
+    assert.equal(cmd.payload.data, undefined);
     assert.equal(cmd.msgKey, 'intent-1');
     assert.equal(
       await correlationStore.hasOutboundCorrelation('packet-1'),
@@ -156,20 +156,23 @@ describe('IlpConnector', () => {
     );
   });
 
-  test('a quote reject with destinationAmount in data forwards it on ProcessRejectPacketCmd', async () => {
+  test('a quote reject forwards opaque data without parsing destinationAmount', async () => {
     await connector.handleConnectorCommands([dispatchPrepare()]);
+    const data = Buffer.from('opaque-stream-reject').toString('base64');
     await transport.triggerResponse({
       kind: 'REJECT',
       packetId: 'packet-1',
       rejectCode: 'F99',
       rejectMessage: 'quote response',
-      data: Buffer.from(JSON.stringify({ destinationAmount: '95' })).toString(
-        'base64'
-      )
+      data
     });
 
     const cmd = producer.sent[0] as ProcessRejectPacketCmd;
-    assert.equal(cmd.payload.destinationAmount, '95');
+    assert.equal(cmd.payload.data, data);
+    assert.equal(
+      (cmd.payload as { destinationAmount?: string }).destinationAmount,
+      undefined
+    );
   });
 
   test('a peer fulfill produces a ProcessFulfillPacketCmd keyed by paymentIntentId', async () => {
