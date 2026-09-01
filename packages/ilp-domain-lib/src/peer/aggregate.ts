@@ -15,10 +15,7 @@ import {
   StartRemoteQuoteCmd,
   UpdatePeerCmd
 } from '../commands';
-import {
-  IPeeringClient,
-  PacketCorrelation
-} from '../packet';
+import { IPeeringClient, PacketCorrelation } from '../packet';
 import { PacketNotFound } from '../packet/errors';
 import {
   decodeStreamReply,

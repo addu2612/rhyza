@@ -93,15 +93,19 @@ class MockConsumer implements IMessageConsumer {
 
 const PEER: IPeer = {
   peerId: 'peer-1',
-  http: { outgoing: { endpoint: 'https://peer.example/ilp', callbackEndpoint: 'https://peer.example/ilp/callback', authToken: 't' } },
+  http: {
+    outgoing: {
+      endpoint: 'https://peer.example/ilp',
+      callbackEndpoint: 'https://peer.example/ilp/callback',
+      authToken: 't'
+    }
+  },
   isActive: true
 };
 
 const TEST_QUOTE_SECRET = Buffer.alloc(32, 7).toString('base64url');
 
-function isIncomingMoney(reply: {
-  accept?: unknown;
-}): reply is IncomingMoney {
+function isIncomingMoney(reply: { accept?: unknown }): reply is IncomingMoney {
   return typeof reply.accept === 'function';
 }
 
@@ -245,7 +249,11 @@ describe('IlpCommandHandler — peer creation/update', () => {
         {
           peerId: 'peer-1',
           http: {
-            outgoing: { endpoint: 'https://peer.example/ilp', callbackEndpoint: 'https://peer.example/ilp/callback', authToken: 't' }
+            outgoing: {
+              endpoint: 'https://peer.example/ilp',
+              callbackEndpoint: 'https://peer.example/ilp/callback',
+              authToken: 't'
+            }
           }
         },
         'req-create-dup'
@@ -301,7 +309,11 @@ describe('IlpCommandHandler — peer creation/update', () => {
         {
           peerId: 'peer-does-not-exist',
           http: {
-            outgoing: { endpoint: 'https://peer.example/ilp', callbackEndpoint: 'https://peer.example/ilp/callback', authToken: 't' }
+            outgoing: {
+              endpoint: 'https://peer.example/ilp',
+              callbackEndpoint: 'https://peer.example/ilp/callback',
+              authToken: 't'
+            }
           }
         },
         'req-update-unknown'
@@ -441,7 +453,10 @@ describe('IlpCommandHandler — remote payment sending', () => {
         m.msgName === DispatchPreparePacketCmd.name &&
         (m as DispatchPreparePacketCmd).payload.paymentIntentId === 'intent-2'
     ) as DispatchPreparePacketCmd;
-    assert.ok(dispatch, 'sibling command in the same batch must still dispatch');
+    assert.ok(
+      dispatch,
+      'sibling command in the same batch must still dispatch'
+    );
   });
 
   test('a StartRemotePaymentCmd for an unknown peer fails without poisoning the batch', async () => {
@@ -493,7 +508,10 @@ describe('IlpCommandHandler — remote payment sending', () => {
         m.msgName === DispatchPreparePacketCmd.name &&
         (m as DispatchPreparePacketCmd).payload.paymentIntentId === 'intent-2'
     ) as DispatchPreparePacketCmd;
-    assert.ok(dispatch, 'sibling command in the same batch must still dispatch');
+    assert.ok(
+      dispatch,
+      'sibling command in the same batch must still dispatch'
+    );
   });
 
   test('starting a remote payment dispatches a prepare to the connector', async () => {
@@ -886,7 +904,10 @@ describe('IlpCommandHandler — remote quote sending', () => {
     const dispatch = producer.sent.find(
       (m) => m.msgName === DispatchPreparePacketCmd.name
     ) as DispatchPreparePacketCmd;
-    assert.ok(dispatch, 'sibling command in the same batch must still dispatch');
+    assert.ok(
+      dispatch,
+      'sibling command in the same batch must still dispatch'
+    );
     assert.equal(dispatch.payload.paymentIntentId, 'intent-1');
   });
 
@@ -921,7 +942,10 @@ describe('IlpCommandHandler — remote quote sending', () => {
     const dispatch = producer.sent.find(
       (m) => m.msgName === DispatchPreparePacketCmd.name
     ) as DispatchPreparePacketCmd;
-    assert.ok(dispatch, 'sibling command in the same batch must still dispatch');
+    assert.ok(
+      dispatch,
+      'sibling command in the same batch must still dispatch'
+    );
     assert.equal(dispatch.payload.paymentIntentId, 'intent-1');
   });
 

@@ -80,7 +80,13 @@ class MockConsumer implements IMessageConsumer {
 
 const PEER: IPeer = {
   peerId: 'peer-1',
-  http: { outgoing: { endpoint: 'https://peer.example/ilp', callbackEndpoint: 'https://peer.example/ilp/callback', authToken: 't' } },
+  http: {
+    outgoing: {
+      endpoint: 'https://peer.example/ilp',
+      callbackEndpoint: 'https://peer.example/ilp/callback',
+      authToken: 't'
+    }
+  },
   isActive: true
 };
 

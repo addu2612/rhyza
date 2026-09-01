@@ -3,10 +3,7 @@
 import assert from 'node:assert';
 import { randomBytes } from 'node:crypto';
 import { describe, test } from 'node:test';
-import {
-  StreamServer,
-  type IncomingMoney
-} from '@interledger/stream-receiver';
+import { StreamServer, type IncomingMoney } from '@interledger/stream-receiver';
 import { encodeOutgoingStreamPrepare } from '../src/stream/encode.js';
 
 function remoteReceiver() {
@@ -34,9 +31,7 @@ function toPrepare(
   };
 }
 
-function isIncomingMoney(reply: {
-  accept?: unknown;
-}): reply is IncomingMoney {
+function isIncomingMoney(reply: { accept?: unknown }): reply is IncomingMoney {
   return typeof reply.accept === 'function';
 }
 

@@ -39,9 +39,7 @@ function decryptPrepare(sharedSecret: Buffer, data: Buffer): Packet {
   );
 }
 
-function isIncomingMoney(reply: {
-  accept?: unknown;
-}): reply is IncomingMoney {
+function isIncomingMoney(reply: { accept?: unknown }): reply is IncomingMoney {
   return typeof reply.accept === 'function';
 }
 
