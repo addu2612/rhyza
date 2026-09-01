@@ -10,11 +10,9 @@ const TIMEOUT_MS = 5_000;
 // Packets expire in ~30s, so this is purely an operational window
 // for reconciling a payment against the transport record
 // The durable history lives in the Payments BC. Without it the collection grows without bound.
-const PACKET_RETENTION_SECONDS = 7 * 24 * 60 * 60;
+export const PACKET_RETENTION_SECONDS = 7 * 24 * 60 * 60;
 
 // Single-writer store for ILP peer configuration and packet correlations.
-// Durable state only: inbound reply handles are per-packet transport state and
-// live in an expiring store, composed alongside this one by PeerRepository.
 // Only ilp-command-handler-service should mutate this repo
 // API service processes publish CreatePeerCmd/UpdatePeerCmd instead of writing directly,
 // so this remains the sole cache/consistency owner regardless of how many

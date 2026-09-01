@@ -21,43 +21,6 @@ export {
   decrypt as decryptStreamData
 };
 
-export interface StreamDecodeInput {
-  sharedSecret: Buffer;
-  executionCondition: Buffer;
-  data: Buffer;
-}
-
-export interface StreamDecodeResult {
-  fulfillable: boolean;
-  fulfillment?: Buffer;
-  plaintext?: Buffer;
-}
-
-export function decodeInboundStreamPrepare(
-  input: StreamDecodeInput
-): StreamDecodeResult {
-  const encryptionKey = hmac(input.sharedSecret, ENCRYPTION_KEY_STRING);
-  let plaintext: Buffer | undefined;
-  try {
-    plaintext = decrypt(encryptionKey, input.data);
-  } catch {
-    plaintext = undefined;
-  }
-
-  const fulfillmentKey = hmac(
-    input.sharedSecret,
-    FULFILLMENT_GENERATION_STRING
-  );
-  const fulfillment = hmac(fulfillmentKey, input.data);
-  const fulfillable = sha256(fulfillment).equals(input.executionCondition);
-
-  if (fulfillable) {
-    return { fulfillable: true, fulfillment, plaintext };
-  }
-
-  return { fulfillable: false, plaintext };
-}
-
 export interface StreamReply {
   // Amount that arrived at the receiver, in the receiver's asset.
   prepareAmount: string;

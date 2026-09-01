@@ -1,6 +1,7 @@
 'use strict';
 
 import assert from 'node:assert';
+import { randomBytes } from 'node:crypto';
 import { describe, test } from 'node:test';
 import {
   ConsoleLogger,
@@ -23,6 +24,8 @@ import {
   DispatchRejectPacketCmd,
   ExpirePacketCmd,
   createFakeResolveStreamCredentials,
+  type IncomingMoney,
+  StreamServer,
   IlpPeerAggregate,
   ILPPeerCreatedEvent,
   ILPPeerCreationFailedEvent,
@@ -41,7 +44,6 @@ import {
   StartRemoteQuoteCmd,
   ProcessFulfillPacketCmd,
   UpdatePeerCmd,
-  decodeInboundStreamPrepare,
   encodeStreamQuoteReply,
   encryptStreamData,
   hmacSha256,
@@ -91,11 +93,52 @@ class MockConsumer implements IMessageConsumer {
 
 const PEER: IPeer = {
   peerId: 'peer-1',
-  http: { outgoing: { endpoint: 'https://peer.example/ilp', authToken: 't' } },
+  http: { outgoing: { endpoint: 'https://peer.example/ilp', callbackEndpoint: 'https://peer.example/ilp/callback', authToken: 't' } },
   isActive: true
 };
 
 const TEST_QUOTE_SECRET = Buffer.alloc(32, 7).toString('base64url');
+
+function isIncomingMoney(reply: {
+  accept?: unknown;
+}): reply is IncomingMoney {
+  return typeof reply.accept === 'function';
+}
+
+function createRemoteReceiver() {
+  const streamServer = new StreamServer({
+    serverSecret: randomBytes(32),
+    serverAddress: 'g.peer.bob'
+  });
+  const credentials = streamServer.generateCredentials({
+    paymentTag: 'remote'
+  });
+  return { streamServer, credentials };
+}
+
+function createReplyForDispatch(
+  streamServer: StreamServer,
+  destination: string,
+  dispatch: {
+    payload: {
+      amount: string;
+      expiresAt: string;
+      executionCondition: string;
+      data?: string;
+    };
+  }
+) {
+  return streamServer.createReply({
+    destination,
+    amount: dispatch.payload.amount,
+    expiresAt: new Date(dispatch.payload.expiresAt),
+    executionCondition: Buffer.from(
+      dispatch.payload.executionCondition,
+      'base64'
+    ),
+    data: Buffer.from(dispatch.payload.data as string, 'base64')
+  });
+}
 
 const startQuote = () =>
   new StartRemoteQuoteCmd(
@@ -153,6 +196,7 @@ describe('IlpCommandHandler — peer creation/update', () => {
           http: {
             outgoing: {
               endpoint: 'https://new-peer.example/ilp',
+              callbackEndpoint: 'https://new-peer.example/ilp/callback',
               authToken: 't'
             }
           },
@@ -201,7 +245,7 @@ describe('IlpCommandHandler — peer creation/update', () => {
         {
           peerId: 'peer-1',
           http: {
-            outgoing: { endpoint: 'https://peer.example/ilp', authToken: 't' }
+            outgoing: { endpoint: 'https://peer.example/ilp', callbackEndpoint: 'https://peer.example/ilp/callback', authToken: 't' }
           }
         },
         'req-create-dup'
@@ -227,6 +271,7 @@ describe('IlpCommandHandler — peer creation/update', () => {
           http: {
             outgoing: {
               endpoint: 'https://peer.example/ilp',
+              callbackEndpoint: 'https://peer.example/ilp/callback',
               authToken: 't2'
             }
           },
@@ -256,7 +301,7 @@ describe('IlpCommandHandler — peer creation/update', () => {
         {
           peerId: 'peer-does-not-exist',
           http: {
-            outgoing: { endpoint: 'https://peer.example/ilp', authToken: 't' }
+            outgoing: { endpoint: 'https://peer.example/ilp', callbackEndpoint: 'https://peer.example/ilp/callback', authToken: 't' }
           }
         },
         'req-update-unknown'
@@ -298,7 +343,6 @@ describe('IlpCommandHandler — peer activation mirror', () => {
         destinationIlpAddress: 'g.us.alice',
         amount: '100',
         expiresAt: new Date(Date.now() + 30_000).toISOString(),
-        replyHandle: 'reply-handle-1',
         executionCondition: Buffer.alloc(32).toString('base64')
       })
     ]);
@@ -349,6 +393,109 @@ describe('IlpCommandHandler — peer activation mirror', () => {
 });
 
 describe('IlpCommandHandler — remote payment sending', () => {
+  test('a StartRemotePaymentCmd with no shared secret fails without poisoning the batch', async () => {
+    const { producer, consumer } = await startedHandler();
+    const sharedSecret = Buffer.alloc(32, 9).toString('base64url');
+
+    await consumer.deliver([
+      new StartRemotePaymentCmd(
+        {
+          peerId: 'peer-1',
+          paymentIntentId: 'intent-1',
+          paymentId: 'pay-missing',
+          destinationIlpAddress: 'g.peer.bob',
+          amount: '100',
+          assetCode: 'USD',
+          assetScale: 2,
+          expiresAt: new Date(Date.now() + 30_000).toISOString(),
+          sharedSecret: ''
+        },
+        'req-pay-missing'
+      ),
+      new StartRemotePaymentCmd(
+        {
+          peerId: 'peer-1',
+          paymentIntentId: 'intent-2',
+          paymentId: 'pay-ok',
+          destinationIlpAddress: 'g.peer.bob',
+          amount: '50',
+          assetCode: 'USD',
+          assetScale: 2,
+          expiresAt: new Date(Date.now() + 30_000).toISOString(),
+          sharedSecret
+        },
+        'req-pay-ok'
+      )
+    ]);
+
+    const failed = producer.sent.find(
+      (m) => m.msgName === ILPPaymentFailedEvent.name
+    ) as ILPPaymentFailedEvent;
+    assert.ok(failed, 'expected ILPPaymentFailedEvent');
+    assert.equal(failed.payload.paymentId, 'pay-missing');
+    assert.equal(failed.payload.reason, 'REJECTED');
+    assert.equal(failed.requestId, 'req-pay-missing');
+
+    const dispatch = producer.sent.find(
+      (m) =>
+        m.msgName === DispatchPreparePacketCmd.name &&
+        (m as DispatchPreparePacketCmd).payload.paymentIntentId === 'intent-2'
+    ) as DispatchPreparePacketCmd;
+    assert.ok(dispatch, 'sibling command in the same batch must still dispatch');
+  });
+
+  test('a StartRemotePaymentCmd for an unknown peer fails without poisoning the batch', async () => {
+    const { producer, consumer } = await startedHandler();
+    const sharedSecret = Buffer.alloc(32, 9).toString('base64url');
+
+    await consumer.deliver([
+      new StartRemotePaymentCmd(
+        {
+          peerId: 'peer-missing',
+          paymentIntentId: 'intent-1',
+          paymentId: 'pay-missing-peer',
+          destinationIlpAddress: 'g.peer.bob',
+          amount: '100',
+          assetCode: 'USD',
+          assetScale: 2,
+          expiresAt: new Date(Date.now() + 30_000).toISOString(),
+          sharedSecret
+        },
+        'req-pay-unknown-peer'
+      ),
+      new StartRemotePaymentCmd(
+        {
+          peerId: 'peer-1',
+          paymentIntentId: 'intent-2',
+          paymentId: 'pay-ok',
+          destinationIlpAddress: 'g.peer.bob',
+          amount: '50',
+          assetCode: 'USD',
+          assetScale: 2,
+          expiresAt: new Date(Date.now() + 30_000).toISOString(),
+          sharedSecret
+        },
+        'req-pay-ok'
+      )
+    ]);
+
+    const failed = producer.sent.find(
+      (m) => m.msgName === ILPPaymentFailedEvent.name
+    ) as ILPPaymentFailedEvent;
+    assert.ok(failed, 'expected ILPPaymentFailedEvent');
+    assert.equal(failed.payload.paymentId, 'pay-missing-peer');
+    assert.equal(failed.payload.peerId, 'peer-missing');
+    assert.equal(failed.payload.reason, 'REJECTED');
+    assert.equal(failed.requestId, 'req-pay-unknown-peer');
+
+    const dispatch = producer.sent.find(
+      (m) =>
+        m.msgName === DispatchPreparePacketCmd.name &&
+        (m as DispatchPreparePacketCmd).payload.paymentIntentId === 'intent-2'
+    ) as DispatchPreparePacketCmd;
+    assert.ok(dispatch, 'sibling command in the same batch must still dispatch');
+  });
+
   test('starting a remote payment dispatches a prepare to the connector', async () => {
     const { producer, consumer } = await startedHandler();
     const sharedSecret = Buffer.alloc(32, 9).toString('base64url');
@@ -382,8 +529,8 @@ describe('IlpCommandHandler — remote payment sending', () => {
 
   test('StartRemotePaymentCmd dispatches a STREAM-verifiable execution condition', async () => {
     const { producer, consumer } = await startedHandler();
-    const sharedSecretBuf = Buffer.alloc(32, 9);
-    const sharedSecret = sharedSecretBuf.toString('base64url');
+    const { streamServer, credentials } = createRemoteReceiver();
+    const sharedSecret = credentials.sharedSecret.toString('base64url');
 
     await consumer.deliver([
       new StartRemotePaymentCmd(
@@ -391,7 +538,7 @@ describe('IlpCommandHandler — remote payment sending', () => {
           peerId: 'peer-1',
           paymentIntentId: 'intent-1',
           paymentId: 'pay-1',
-          destinationIlpAddress: 'g.peer.bob',
+          destinationIlpAddress: credentials.ilpAddress,
           amount: '100',
           assetCode: 'USD',
           assetScale: 2,
@@ -408,15 +555,12 @@ describe('IlpCommandHandler — remote payment sending', () => {
     assert.ok(dispatch);
     assert.ok(dispatch.payload.data, 'expected STREAM packet data');
 
-    const decoded = decodeInboundStreamPrepare({
-      sharedSecret: sharedSecretBuf,
-      executionCondition: Buffer.from(
-        dispatch.payload.executionCondition,
-        'base64'
-      ),
-      data: Buffer.from(dispatch.payload.data!, 'base64')
-    });
-    assert.equal(decoded.fulfillable, true);
+    const reply = createReplyForDispatch(
+      streamServer,
+      credentials.ilpAddress,
+      dispatch
+    );
+    assert.ok(isIncomingMoney(reply));
   });
 
   async function startRemotePayment(
@@ -424,19 +568,19 @@ describe('IlpCommandHandler — remote payment sending', () => {
     producer: MockProducer,
     expiresAt = new Date(Date.now() + 30_000).toISOString()
   ) {
-    const sharedSecretBuf = Buffer.alloc(32, 9);
+    const { streamServer, credentials } = createRemoteReceiver();
     await consumer.deliver([
       new StartRemotePaymentCmd(
         {
           peerId: 'peer-1',
           paymentIntentId: 'intent-1',
           paymentId: 'pay-1',
-          destinationIlpAddress: 'g.peer.bob',
+          destinationIlpAddress: credentials.ilpAddress,
           amount: '100',
           assetCode: 'USD',
           assetScale: 2,
           expiresAt,
-          sharedSecret: sharedSecretBuf.toString('base64url')
+          sharedSecret: credentials.sharedSecret.toString('base64url')
         },
         'req-pay-1'
       )
@@ -445,18 +589,15 @@ describe('IlpCommandHandler — remote payment sending', () => {
       (m) => m.msgName === DispatchPreparePacketCmd.name
     ) as DispatchPreparePacketCmd;
     assert.ok(dispatch);
-    const decoded = decodeInboundStreamPrepare({
-      sharedSecret: sharedSecretBuf,
-      executionCondition: Buffer.from(
-        dispatch.payload.executionCondition,
-        'base64'
-      ),
-      data: Buffer.from(dispatch.payload.data!, 'base64')
-    });
-    assert.ok(decoded.fulfillment);
+    const reply = createReplyForDispatch(
+      streamServer,
+      credentials.ilpAddress,
+      dispatch
+    );
+    assert.ok(isIncomingMoney(reply));
     return {
       dispatch,
-      fulfillment: decoded.fulfillment!.toString('base64')
+      fulfillment: reply.accept().fulfillment.toString('base64')
     };
   }
 
@@ -588,14 +729,15 @@ describe('IlpCommandHandler — remote payment sending', () => {
     );
     await handler.start();
 
-    const sharedSecret = Buffer.alloc(32, 9).toString('base64url');
+    const { streamServer, credentials } = createRemoteReceiver();
+    const sharedSecret = credentials.sharedSecret.toString('base64url');
     await consumer.deliver([
       new StartRemotePaymentCmd(
         {
           peerId: 'peer-1',
           paymentIntentId: 'intent-1',
           paymentId: 'pay-1',
-          destinationIlpAddress: 'g.peer.bob',
+          destinationIlpAddress: credentials.ilpAddress,
           amount: '100',
           assetCode: 'USD',
           assetScale: 2,
@@ -613,17 +755,17 @@ describe('IlpCommandHandler — remote payment sending', () => {
       assert.equal(dispatches[0].paymentId, 'pay-1');
       assert.ok(dispatches[0].executionCondition);
       assert.ok(dispatches[0].data);
-      assert.equal(
-        decodeInboundStreamPrepare({
-          sharedSecret: Buffer.from(sharedSecret, 'base64url'),
-          executionCondition: Buffer.from(
-            dispatches[0].executionCondition,
-            'base64'
-          ),
-          data: Buffer.from(dispatches[0].data, 'base64')
-        }).fulfillable,
-        true
-      );
+      const reply = streamServer.createReply({
+        destination: credentials.ilpAddress,
+        amount: '100',
+        expiresAt: new Date(Date.now() + 30_000),
+        executionCondition: Buffer.from(
+          dispatches[0].executionCondition,
+          'base64'
+        ),
+        data: Buffer.from(dispatches[0].data, 'base64')
+      });
+      assert.ok(isIncomingMoney(reply));
     }
   });
 
@@ -714,6 +856,75 @@ describe('IlpCommandHandler — remote payment sending', () => {
 });
 
 describe('IlpCommandHandler — remote quote sending', () => {
+  test('a StartRemoteQuoteCmd with no shared secret fails without poisoning the batch', async () => {
+    const { producer, consumer } = await startedHandler();
+
+    await consumer.deliver([
+      new StartRemoteQuoteCmd(
+        {
+          peerId: 'peer-1',
+          paymentIntentId: 'intent-1',
+          quoteId: 'quote-missing',
+          destinationIlpAddress: 'g.peer.bob',
+          sourceAmount: '100',
+          sourceAssetCode: 'USD',
+          sourceAssetScale: 2,
+          sharedSecret: ''
+        },
+        'req-quote-missing'
+      ),
+      startQuote()
+    ]);
+
+    const failed = producer.sent.find(
+      (m) => m.msgName === ILPQuoteFailedEvent.name
+    ) as ILPQuoteFailedEvent;
+    assert.ok(failed, 'expected ILPQuoteFailedEvent');
+    assert.equal(failed.payload.quoteId, 'quote-missing');
+    assert.equal(failed.requestId, 'req-quote-missing');
+
+    const dispatch = producer.sent.find(
+      (m) => m.msgName === DispatchPreparePacketCmd.name
+    ) as DispatchPreparePacketCmd;
+    assert.ok(dispatch, 'sibling command in the same batch must still dispatch');
+    assert.equal(dispatch.payload.paymentIntentId, 'intent-1');
+  });
+
+  test('a StartRemoteQuoteCmd for an unknown peer fails without poisoning the batch', async () => {
+    const { producer, consumer } = await startedHandler();
+
+    await consumer.deliver([
+      new StartRemoteQuoteCmd(
+        {
+          peerId: 'peer-missing',
+          paymentIntentId: 'intent-1',
+          quoteId: 'quote-missing-peer',
+          destinationIlpAddress: 'g.peer.bob',
+          sourceAmount: '100',
+          sourceAssetCode: 'USD',
+          sourceAssetScale: 2,
+          sharedSecret: TEST_QUOTE_SECRET
+        },
+        'req-quote-unknown-peer'
+      ),
+      startQuote()
+    ]);
+
+    const failed = producer.sent.find(
+      (m) => m.msgName === ILPQuoteFailedEvent.name
+    ) as ILPQuoteFailedEvent;
+    assert.ok(failed, 'expected ILPQuoteFailedEvent');
+    assert.equal(failed.payload.quoteId, 'quote-missing-peer');
+    assert.equal(failed.payload.peerId, 'peer-missing');
+    assert.equal(failed.requestId, 'req-quote-unknown-peer');
+
+    const dispatch = producer.sent.find(
+      (m) => m.msgName === DispatchPreparePacketCmd.name
+    ) as DispatchPreparePacketCmd;
+    assert.ok(dispatch, 'sibling command in the same batch must still dispatch');
+    assert.equal(dispatch.payload.paymentIntentId, 'intent-1');
+  });
+
   test('starting a remote quote dispatches a probe to the connector', async () => {
     const { producer, consumer } = await startedHandler();
     await consumer.deliver([startQuote()]);

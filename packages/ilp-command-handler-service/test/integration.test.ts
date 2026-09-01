@@ -111,7 +111,7 @@ class TestTransport implements IConnectorTransport {
   private _onInboundPrepare?: WireInboundPrepareHandler;
   readonly sentResponses: Array<{
     peerId: string;
-    replyHandle: string;
+    callbackDeadline: string;
     response: WireFulfill | WireReject;
   }> = [];
 
@@ -131,16 +131,16 @@ class TestTransport implements IConnectorTransport {
   async sendFulfill(
     fulfill: WireFulfill,
     peerId: string,
-    replyHandle: string
+    callbackDeadline: string
   ): Promise<void> {
-    this.sentResponses.push({ peerId, replyHandle, response: fulfill });
+    this.sentResponses.push({ peerId, callbackDeadline, response: fulfill });
   }
   async sendReject(
     reject: WireReject,
     peerId: string,
-    replyHandle: string
+    callbackDeadline: string
   ): Promise<void> {
-    this.sentResponses.push({ peerId, replyHandle, response: reject });
+    this.sentResponses.push({ peerId, callbackDeadline, response: reject });
   }
   onResponse(handler: WireResponseHandler): void {
     this._onResponse = handler;
@@ -152,7 +152,7 @@ class TestTransport implements IConnectorTransport {
 
 const PEER: IPeer = {
   peerId: 'peer-1',
-  http: { outgoing: { endpoint: 'https://peer.example/ilp', authToken: 't' } },
+  http: { outgoing: { endpoint: 'https://peer.example/ilp', callbackEndpoint: 'https://peer.example/ilp/callback', authToken: 't' } },
   isActive: true
 };
 

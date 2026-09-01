@@ -1,5 +1,9 @@
 import { PacketInvalidState } from './errors';
-import { IPacketCorrelation, PacketState } from './interfaces';
+import {
+  IPacketCorrelation,
+  InboundPrepareSnapshot,
+  PacketState
+} from './interfaces';
 
 export class PacketCorrelation {
   private constructor(private readonly _data: IPacketCorrelation) {}
@@ -12,6 +16,7 @@ export class PacketCorrelation {
     quoteId: string;
     requestId: string;
     sharedSecret?: string;
+    inboundPrepare?: InboundPrepareSnapshot;
   }): PacketCorrelation {
     return new PacketCorrelation({ ...args, kind: 'QUOTE', state: 'PENDING' });
   }
@@ -24,6 +29,7 @@ export class PacketCorrelation {
     paymentId: string;
     requestId: string;
     executionCondition?: string;
+    inboundPrepare?: InboundPrepareSnapshot;
   }): PacketCorrelation {
     return new PacketCorrelation({
       ...args,

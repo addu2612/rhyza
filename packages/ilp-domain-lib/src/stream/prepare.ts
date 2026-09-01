@@ -1,17 +1,20 @@
 'use strict';
 
-import { ProcessPreparePacketCmdPayload } from '../commands';
 import { InboundPrepareSnapshot } from '../packet';
 
-export function inboundPrepareFrom(
-  payload: ProcessPreparePacketCmdPayload
-): InboundPrepareSnapshot {
+export function inboundPrepareFrom(prepare: {
+  destinationIlpAddress: string;
+  amount: string;
+  expiresAt: string;
+  executionCondition: string;
+  data?: string;
+}): InboundPrepareSnapshot {
   return {
-    destinationIlpAddress: payload.destinationIlpAddress,
-    amount: payload.amount,
-    expiresAt: payload.expiresAt,
-    executionCondition: payload.executionCondition,
-    data: payload.data ?? ''
+    destinationIlpAddress: prepare.destinationIlpAddress,
+    amount: prepare.amount,
+    expiresAt: prepare.expiresAt,
+    executionCondition: prepare.executionCondition,
+    data: prepare.data ?? ''
   };
 }
 

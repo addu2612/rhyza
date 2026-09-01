@@ -42,7 +42,7 @@ export class KafkaPeeringClient implements IPeeringClient {
     const cmd = new DispatchRejectPacketCmd({
       peerId: input.peerId,
       packetId: input.packetId,
-      replyHandle: input.replyHandle,
+      callbackDeadline: input.callbackDeadline,
       rejectCode: input.rejectCode,
       rejectMessage: input.rejectMessage,
       triggeredBy: input.triggeredBy,
@@ -59,7 +59,7 @@ export class KafkaPeeringClient implements IPeeringClient {
     const cmd = new DispatchFulfillPacketCmd({
       peerId: input.peerId,
       packetId: input.packetId,
-      replyHandle: input.replyHandle,
+      callbackDeadline: input.callbackDeadline,
       fulfillment: input.fulfillment,
       data: input.data
     });

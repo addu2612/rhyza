@@ -101,7 +101,7 @@ class InMemoryBus {
 // initiating a quoting probe) and captures the reject the connector sends back.
 type SentWireReply = {
   peerId: string;
-  replyHandle: string;
+  callbackDeadline: string;
   response: WireFulfill | WireReject;
 };
 
@@ -113,36 +113,31 @@ class ReceivingTransport implements IConnectorTransport {
   async sendFulfill(
     fulfill: WireFulfill,
     peerId: string,
-    replyHandle: string
+    callbackDeadline: string
   ): Promise<void> {
-    this.sentResponses.push({ peerId, replyHandle, response: fulfill });
+    this.sentResponses.push({ peerId, callbackDeadline, response: fulfill });
   }
   async sendReject(
     reject: WireReject,
     peerId: string,
-    replyHandle: string
+    callbackDeadline: string
   ): Promise<void> {
-    this.sentResponses.push({ peerId, replyHandle, response: reject });
+    this.sentResponses.push({ peerId, callbackDeadline, response: reject });
   }
   onResponse(): void {}
   onInboundPrepare(handler: WireInboundPrepareHandler): void {
     this._onInboundPrepare = handler;
   }
-  async simulateInboundPrepare(
-    prepare: WirePrepare,
-    callbackUrl: string
-  ): Promise<void> {
-    await this._onInboundPrepare?.(prepare, callbackUrl);
+  async simulateInboundPrepare(prepare: WirePrepare): Promise<void> {
+    await this._onInboundPrepare?.(prepare);
   }
 }
 
 const PEER: IPeer = {
   peerId: 'peer-1',
-  http: { outgoing: { endpoint: 'https://peer.example/ilp', authToken: 't' } },
+  http: { outgoing: { endpoint: 'https://peer.example/ilp', callbackEndpoint: 'https://peer.example/ilp/callback', authToken: 't' } },
   isActive: true
 };
-
-const TEST_CALLBACK_URL = 'https://peer.example/callback';
 
 const probe = (
   destinationIlpAddress: string,
@@ -263,8 +258,7 @@ describe('ILP receiving quote flow over Kafka topics', () => {
       await wireSystem(new FixedRateQuoteCalculator(95n, 100n));
 
     await transport.simulateInboundPrepare(
-      streamQuoteProbe(destinationIlpAddress, sharedSecret),
-      TEST_CALLBACK_URL
+      streamQuoteProbe(destinationIlpAddress, sharedSecret)
     );
 
     // The aggregate decoded the probe and published the request received event.
@@ -293,8 +287,7 @@ describe('ILP receiving quote flow over Kafka topics', () => {
     const { bus, transport, destinationIlpAddress } = await wireSystem();
 
     await transport.simulateInboundPrepare(
-      probe(destinationIlpAddress, { peerId: 'peer-unknown' }),
-      TEST_CALLBACK_URL
+      probe(destinationIlpAddress, { peerId: 'peer-unknown' })
     );
 
     assert.equal(requestReceivedEvents(bus).length, 0);
@@ -307,8 +300,7 @@ describe('ILP receiving quote flow over Kafka topics', () => {
     const { bus, transport, destinationIlpAddress } = await wireSystem();
 
     await transport.simulateInboundPrepare(
-      probe(destinationIlpAddress, { amount: '' }),
-      TEST_CALLBACK_URL
+      probe(destinationIlpAddress, { amount: '' })
     );
 
     assert.equal(requestReceivedEvents(bus).length, 0);

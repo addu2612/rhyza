@@ -8,7 +8,6 @@ import {
   FulfillInboundPaymentCmd,
   ProcessFulfillPacketCmd,
   ProcessPreparePacketCmd,
-  ProcessPreparePacketCmdPayload,
   ProcessRejectPacketCmd,
   RejectInboundPaymentCmd,
   RespondToRemoteQuoteCmd,
@@ -18,7 +17,6 @@ import {
 } from '../commands';
 import {
   IPeeringClient,
-  IInboundPacketReplyHandle,
   PacketCorrelation
 } from '../packet';
 import { PacketNotFound } from '../packet/errors';
@@ -32,7 +30,7 @@ import {
   toIlpPrepare
 } from '../stream';
 import { Peer } from './entity';
-import { DuplicatePeer, MissingStreamCredentials, UnknownPeer } from './errors';
+import { DuplicatePeer, UnknownPeer } from './errors';
 import {
   ILPPeerCreatedEvent,
   ILPPeerCreationFailedEvent,
@@ -45,7 +43,8 @@ import {
   ILPQuoteRequestReceivedEvent,
   ILPPaymentReceivedEvent,
   ILPPaymentFulfillmentSentEvent,
-  ILPPaymentFulfillmentFailedEvent
+  ILPPaymentFulfillmentFailedEvent,
+  ILPPaymentFailureReason
 } from './events';
 import { IPeer, IPeerRepository } from './interfaces';
 
@@ -74,11 +73,17 @@ function isFinalRejectCode(rejectCode: string | undefined): boolean {
   return rejectCode?.startsWith('F') === true;
 }
 
-function requireSharedSecret(sharedSecret: string, context: string): Buffer {
+function packetHasExpired(expiresAt: Date | string): boolean {
+  const deadline =
+    expiresAt instanceof Date ? expiresAt.getTime() : Date.parse(expiresAt);
+  return !Number.isFinite(deadline) || deadline <= Date.now();
+}
+
+function parseSharedSecret(
+  sharedSecret: string | undefined
+): Buffer | undefined {
   if (!sharedSecret) {
-    throw new MissingStreamCredentials(
-      `${context} has no STREAM shared secret; cannot build a prepare`
-    );
+    return undefined;
   }
   return Buffer.from(sharedSecret, 'base64url');
 }
@@ -288,7 +293,32 @@ export class IlpPeerAggregate {
     const payload = cmd.payload;
     const peer = await this.peerRepo.fetchById(payload.peerId);
     if (!peer) {
-      throw new UnknownPeer(`Peer ${payload.peerId} not found`);
+      return [
+        new ILPQuoteFailedEvent(
+          {
+            peerId: payload.peerId,
+            paymentIntentId: payload.paymentIntentId,
+            quoteId: payload.quoteId,
+            rejectMessage: `Peer ${payload.peerId} not found`
+          },
+          cmd.requestId
+        )
+      ];
+    }
+
+    const sharedSecret = parseSharedSecret(payload.sharedSecret);
+    if (!sharedSecret) {
+      return [
+        new ILPQuoteFailedEvent(
+          {
+            peerId: payload.peerId,
+            paymentIntentId: payload.paymentIntentId,
+            quoteId: payload.quoteId,
+            rejectMessage: 'missing STREAM shared secret'
+          },
+          cmd.requestId
+        )
+      ];
     }
 
     const packetId = crypto.randomUUID();
@@ -298,10 +328,7 @@ export class IlpPeerAggregate {
     // answering F04 (insufficient destination amount) instead of telling us
     // the rate.
     const encoded = encodeOutgoingStreamPrepare({
-      sharedSecret: requireSharedSecret(
-        payload.sharedSecret,
-        `Quote ${payload.quoteId}`
-      ),
+      sharedSecret,
       minDestinationAmount: '0'
     });
 
@@ -339,7 +366,36 @@ export class IlpPeerAggregate {
     const payload = cmd.payload;
     const peer = await this.peerRepo.fetchById(payload.peerId);
     if (!peer) {
-      throw new UnknownPeer(`Peer ${payload.peerId} not found`);
+      return [
+        new ILPPaymentFailedEvent(
+          {
+            peerId: payload.peerId,
+            paymentIntentId: payload.paymentIntentId,
+            paymentId: payload.paymentId,
+            failedAt: new Date().toISOString(),
+            reason: ILPPaymentFailureReason.REJECTED,
+            rejectMessage: `Peer ${payload.peerId} not found`
+          },
+          cmd.requestId
+        )
+      ];
+    }
+
+    const sharedSecret = parseSharedSecret(payload.sharedSecret);
+    if (!sharedSecret) {
+      return [
+        new ILPPaymentFailedEvent(
+          {
+            peerId: payload.peerId,
+            paymentIntentId: payload.paymentIntentId,
+            paymentId: payload.paymentId,
+            failedAt: new Date().toISOString(),
+            reason: ILPPaymentFailureReason.REJECTED,
+            rejectMessage: 'missing STREAM shared secret'
+          },
+          cmd.requestId
+        )
+      ];
     }
 
     const packetId = crypto.randomUUID();
@@ -348,10 +404,7 @@ export class IlpPeerAggregate {
     // That equality breaks the moment a hop applies FX — a multi-hop path or
     // slippage policy has to supply a real minimum here instead.
     const encoded = encodeOutgoingStreamPrepare({
-      sharedSecret: requireSharedSecret(
-        payload.sharedSecret,
-        `Payment ${payload.paymentId}`
-      ),
+      sharedSecret,
       minDestinationAmount: payload.amount
     });
 
@@ -389,6 +442,11 @@ export class IlpPeerAggregate {
     cmd: ProcessPreparePacketCmd
   ): Promise<IMessage[]> {
     const payload = cmd.payload;
+
+    if (packetHasExpired(payload.expiresAt)) {
+      await this.rejectInbound(payload, REJECT_CODE_TRANSFER_TIMED_OUT);
+      return [];
+    }
 
     const peer = await this.peerRepo.fetchById(payload.peerId);
     if (!peer || peer.isActive === false) {
@@ -434,16 +492,10 @@ export class IlpPeerAggregate {
         paymentIntentId: resolved.paymentIntentId,
         expiresAt: new Date(payload.expiresAt),
         paymentId,
-        requestId
+        requestId,
+        inboundPrepare
       });
       await this.peerRepo.storePacket(correlation.toObject());
-      await this.peerRepo.storeInboundReplyHandle({
-        packetId: payload.packetId,
-        peerId: payload.peerId,
-        replyHandle: payload.replyHandle,
-        inboundPrepare,
-        expiresAt: payload.expiresAt
-      });
       return [
         new ILPPaymentReceivedEvent({
           peerId: peer.peerId,
@@ -463,7 +515,7 @@ export class IlpPeerAggregate {
       await this.peeringClient.dispatchFulfill({
         peerId: payload.peerId,
         packetId: payload.packetId,
-        replyHandle: payload.replyHandle,
+        callbackDeadline: payload.expiresAt,
         fulfillment: streamReply.fulfillment.toString('base64'),
         data: streamReply.data.toString('base64')
       });
@@ -485,13 +537,17 @@ export class IlpPeerAggregate {
       return [];
     }
 
-    await this.peerRepo.storeInboundReplyHandle({
+    const correlation = PacketCorrelation.createQuote({
       packetId: payload.packetId,
-      peerId: payload.peerId,
-      replyHandle: payload.replyHandle,
-      inboundPrepare,
-      expiresAt: payload.expiresAt
+      peerId: peer.peerId,
+      paymentIntentId: resolved.paymentIntentId,
+      expiresAt: new Date(payload.expiresAt),
+      // Inbound quotes have no Payments quote id and packetId is unique per probe.
+      quoteId: payload.packetId,
+      requestId: cmd.requestId ?? crypto.randomUUID(),
+      inboundPrepare
     });
+    await this.peerRepo.storePacket(correlation.toObject());
 
     return [
       new ILPQuoteRequestReceivedEvent({
@@ -508,24 +564,22 @@ export class IlpPeerAggregate {
     cmd: RespondToRemoteQuoteCmd
   ): Promise<IMessage[]> {
     const payload = cmd.payload;
-    const replyHandle = await this.peerRepo.fetchInboundReplyHandle(
-      payload.packetId
-    );
-    if (!replyHandle) {
+    const stored = await this.peerRepo.fetchPacketById(payload.packetId);
+    if (!stored?.inboundPrepare) {
       return [];
     }
 
+    const inboundPrepare = stored.inboundPrepare;
     if (payload.destinationAmount === undefined) {
-      await this.rejectInbound(replyHandle, REJECT_CODE_INTERNAL);
+      await this.rejectInbound(stored, REJECT_CODE_INTERNAL);
       return [];
     }
 
-    const inboundPrepare = replyHandle.inboundPrepare;
     const resolved = await this.resolveStreamCredentials(
       inboundPrepare.destinationIlpAddress
     );
     if (!resolved) {
-      await this.rejectInbound(replyHandle, REJECT_CODE_INTERNAL);
+      await this.rejectInbound(stored, REJECT_CODE_INTERNAL);
       return [];
     }
 
@@ -537,18 +591,22 @@ export class IlpPeerAggregate {
       assetScale: payload.destinationAssetScale
     });
     if (!data) {
-      await this.rejectInbound(replyHandle, REJECT_CODE_INTERNAL);
+      await this.rejectInbound(stored, REJECT_CODE_INTERNAL);
       return [];
     }
 
     await this.peeringClient.dispatchReject({
       peerId: payload.peerId,
       packetId: payload.packetId,
-      replyHandle: replyHandle.replyHandle,
+      callbackDeadline: inboundPrepare.expiresAt,
       rejectCode: REJECT_CODE_QUOTE_RESPONSE,
       data: data.toString('base64')
     });
-    await this.peerRepo.deleteInboundReplyHandle(payload.packetId);
+    if (stored.state === 'PENDING') {
+      await this.peerRepo.updatePacket(
+        PacketCorrelation.fromObject(stored).reject().toObject()
+      );
+    }
     return [];
   }
 
@@ -579,22 +637,12 @@ export class IlpPeerAggregate {
       return fail(`packet_${stored.state.toLowerCase()}`, stored.paymentId);
     }
 
-    if (stored.expiresAt.getTime() <= Date.now()) {
-      const expired = PacketCorrelation.fromObject(stored).expire().toObject();
-      await this.peerRepo.updatePacket(expired);
-      await this.peerRepo.deleteInboundReplyHandle(payload.packetId);
-      return fail('packet_expired', stored.paymentId);
-    }
-
-    const replyHandle = await this.peerRepo.fetchInboundReplyHandle(
-      payload.packetId
-    );
-    if (!replyHandle) {
-      return fail('reply_handle_missing', stored.paymentId);
+    if (!stored.inboundPrepare) {
+      return fail('prepare_snapshot_missing', stored.paymentId);
     }
 
     const streamReply = this.streamServer.createReply(
-      toIlpPrepare(replyHandle.inboundPrepare)
+      toIlpPrepare(stored.inboundPrepare)
     );
     if (!isIncomingMoney(streamReply)) {
       return fail('not_fulfillable', stored.paymentId);
@@ -602,14 +650,14 @@ export class IlpPeerAggregate {
 
     // One packet per payment, so this packet's amount is the connection total.
     // Revisit alongside any decision to accept split inbound delivery.
-    streamReply.setTotalReceived(replyHandle.inboundPrepare.amount);
+    streamReply.setTotalReceived(stored.inboundPrepare.amount);
     const fulfill = streamReply.accept();
 
     try {
       await this.peeringClient.dispatchFulfill({
         peerId: payload.peerId,
         packetId: payload.packetId,
-        replyHandle: replyHandle.replyHandle,
+        callbackDeadline: stored.inboundPrepare.expiresAt,
         fulfillment: fulfill.fulfillment.toString('base64'),
         data: fulfill.data.toString('base64')
       });
@@ -622,7 +670,6 @@ export class IlpPeerAggregate {
 
     const fulfilled = PacketCorrelation.fromObject(stored).fulfill().toObject();
     await this.peerRepo.updatePacket(fulfilled);
-    await this.peerRepo.deleteInboundReplyHandle(payload.packetId);
 
     return [
       new ILPPaymentFulfillmentSentEvent({
@@ -641,26 +688,22 @@ export class IlpPeerAggregate {
     cmd: RejectInboundPaymentCmd
   ): Promise<IMessage[]> {
     const payload = cmd.payload;
-    const replyHandle = await this.peerRepo.fetchInboundReplyHandle(
-      payload.packetId
-    );
-    if (!replyHandle) {
+    const stored = await this.peerRepo.fetchPacketById(payload.packetId);
+    if (!stored?.inboundPrepare) {
       return [];
     }
 
-    const stored = await this.peerRepo.fetchPacketById(payload.packetId);
-    if (stored?.state === 'PENDING') {
+    if (stored.state === 'PENDING') {
       const rejected = PacketCorrelation.fromObject(stored).reject().toObject();
       await this.peerRepo.updatePacket(rejected);
     }
 
     const rejectCode = payload.rejectCode ?? REJECT_CODE_INTERNAL;
-    const inboundPrepare = replyHandle.inboundPrepare;
+    const inboundPrepare = stored.inboundPrepare;
     const streamReply = this.streamServer.createReply(
       toIlpPrepare(inboundPrepare)
     );
     if (isIncomingMoney(streamReply)) {
-      streamReply.setTotalReceived(inboundPrepare.amount);
       // Take the STREAM framing from the library — finalDecline adds the
       // ConnectionClose frame that tells the sender not to retry — but keep
       // the reject code Payments chose. temporaryDecline/finalDecline are
@@ -670,27 +713,34 @@ export class IlpPeerAggregate {
         ? streamReply.finalDecline()
         : streamReply.temporaryDecline();
       await this.rejectInbound(
-        replyHandle,
+        stored,
         rejectCode,
         reply.data.toString('base64')
       );
       return [];
     }
 
-    await this.rejectInbound(replyHandle, rejectCode);
+    await this.rejectInbound(stored, rejectCode);
     return [];
   }
 
   private async rejectInbound(
-    context: ProcessPreparePacketCmdPayload | IInboundPacketReplyHandle,
+    context: {
+      peerId: string;
+      packetId: string;
+      expiresAt: Date | string;
+    },
     rejectCode: string = REJECT_CODE_INTERNAL,
     data?: string
   ): Promise<void> {
-    await this.peerRepo.deleteInboundReplyHandle(context.packetId);
+    const callbackDeadline =
+      context.expiresAt instanceof Date
+        ? context.expiresAt.toISOString()
+        : context.expiresAt;
     await this.peeringClient.dispatchReject({
       peerId: context.peerId,
       packetId: context.packetId,
-      replyHandle: context.replyHandle,
+      callbackDeadline,
       rejectCode,
       data
     });
@@ -706,7 +756,7 @@ export class IlpPeerAggregate {
     }
 
     if (stored.kind === 'PAYMENT') {
-      if (stored.expiresAt.getTime() <= Date.now()) {
+      if (packetHasExpired(stored.expiresAt)) {
         const expired = PacketCorrelation.fromObject(stored)
           .expire()
           .toObject();
@@ -873,9 +923,10 @@ export class IlpPeerAggregate {
       .expire()
       .toObject();
     await this.peerRepo.updatePacket(transitioned);
-    // The peer gave up on this packet, so the handle can never be answered.
-    // A no-op for outbound packets, which never had one.
-    await this.peerRepo.deleteInboundReplyHandle(payload.packetId);
+    if (transitioned.kind === 'QUOTE' && transitioned.inboundPrepare) {
+      // Inbound quote
+      return [];
+    }
 
     if (transitioned.kind === 'QUOTE') {
       return [

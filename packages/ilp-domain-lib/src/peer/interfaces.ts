@@ -1,13 +1,13 @@
-import type {
-  IInboundPacketReplyHandle,
-  IPacketCorrelation
-} from '../packet/interfaces';
+import type { IPacketCorrelation } from '../packet/interfaces';
 
 // ILP peer connector configuration
 // The ILP BC only owns the connector configuration needed to exchange packets
 // with the peer. `peerId` references the PAL peer.
 export interface PeerHttpOutgoingConfig {
+  // Where we POST prepares to this peer.
   endpoint: string;
+  // Where we POST fulfills/rejects for prepares this peer sent us.
+  callbackEndpoint: string;
   authToken: string;
 }
 
@@ -40,14 +40,4 @@ export interface IPeerStore extends IPeerReader {
   updatePacket(packet: IPacketCorrelation): Promise<void>;
 }
 
-// Ephemeral transport state, kept separate from the durable store because it
-// lives for one packet and is written and read on every inbound prepare.
-export interface IInboundReplyHandleStore {
-  fetchInboundReplyHandle(
-    packetId: string
-  ): Promise<IInboundPacketReplyHandle | undefined>;
-  storeInboundReplyHandle(handle: IInboundPacketReplyHandle): Promise<void>;
-  deleteInboundReplyHandle(packetId: string): Promise<void>;
-}
-
-export interface IPeerRepository extends IPeerStore, IInboundReplyHandleStore {}
+export type IPeerRepository = IPeerStore;

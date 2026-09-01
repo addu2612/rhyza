@@ -1,4 +1,3 @@
-import { Redis } from 'ioredis';
 import { ILogger, IMessageConsumer, IMessageProducer } from 'common-types-lib';
 import {
   KafkaBuilder,
@@ -9,15 +8,12 @@ import {
   IlpPeerAggregate,
   IPeer,
   IPeeringClient,
-  IPeerRepository,
-  IPeerStore
+  IPeerRepository
 } from 'ilp-domain-lib';
 import {
+  CachedPeerStore,
   InMemoryPeerRepository,
   KafkaPeeringClient,
-  MongoDbPeerRepository,
-  PeerRepository,
-  RedisInboundReplyHandleStore,
   createResolveStreamCredentials,
   createStreamServer,
   parseStreamServerSecret
@@ -26,7 +22,7 @@ import { IlpCommandHandler } from './cmd-handler';
 
 const KAFKA_URL = process.env['KAFKA_URL'] || 'localhost:9093';
 const MONGODB_URL = process.env['MONGODB_URL'] || 'mongodb://localhost:27017';
-const REDIS_URL = process.env['REDIS_URL'] || 'redis://localhost:6379';
+const REDIS_URL = process.env['REDIS_URL'];
 const CONSUMER_GROUP_ID = 'ilp-command-handler';
 const STREAM_SERVER_SECRET_RAW =
   process.env['STREAM_SERVER_SECRET'] ||
@@ -38,8 +34,7 @@ export class IlpCommandHandlerService {
   private static _producer: IMessageProducer;
   private static _consumer: IMessageConsumer;
   private static _commandHandler: IlpCommandHandler;
-  private static _peerStore?: MongoDbPeerRepository;
-  private static _redis?: Redis;
+  private static _peerStore?: CachedPeerStore;
 
   static async start(deps?: {
     logger?: ILogger;
@@ -79,13 +74,12 @@ export class IlpCommandHandlerService {
     } else if (deps?.seedPeers) {
       peerRepo = new InMemoryPeerRepository(deps.seedPeers);
     } else {
-      const mongoRepo = new MongoDbPeerRepository(
+      this._peerStore = await CachedPeerStore.connect(
         MONGODB_URL,
-        this._logger.child('peer-repo')
+        this._logger,
+        REDIS_URL
       );
-      await mongoRepo.init();
-      this._peerStore = mongoRepo;
-      peerRepo = await this._buildPeerRepository(mongoRepo);
+      peerRepo = this._peerStore.store;
     }
 
     const peeringClient =
@@ -127,24 +121,8 @@ export class IlpCommandHandlerService {
       await this._producer.disconnect();
     }
     if (this._peerStore) {
-      await this._peerStore.destroy();
+      await this._peerStore.disconnect();
       this._peerStore = undefined;
     }
-    if (this._redis) {
-      await this._redis.quit();
-      this._redis = undefined;
-    }
-  }
-
-  private static async _buildPeerRepository(
-    peerStore: IPeerStore
-  ): Promise<IPeerRepository> {
-    this._redis = new Redis(REDIS_URL, { lazyConnect: true });
-    await this._redis.connect();
-    this._logger.info('Connected to the inbound reply handle store');
-    return new PeerRepository(
-      peerStore,
-      new RedisInboundReplyHandleStore(this._redis)
-    );
   }
 }

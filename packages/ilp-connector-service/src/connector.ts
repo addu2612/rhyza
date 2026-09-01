@@ -28,8 +28,8 @@ export class IlpConnector {
     this._transport.onResponse((response) =>
       this._handleWireResponse(response)
     );
-    this._transport.onInboundPrepare((prepare, callbackUrl) =>
-      this._handleInboundPrepare(prepare, callbackUrl)
+    this._transport.onInboundPrepare((prepare) =>
+      this._handleInboundPrepare(prepare)
     );
     this._transport.onOutboundPrepareAccepted?.((prepare) =>
       this._onOutboundPrepareAccepted(prepare)
@@ -62,7 +62,7 @@ export class IlpConnector {
                 data: payload.data
               },
               payload.peerId,
-              payload.replyHandle
+              payload.callbackDeadline
             )
           );
           break;
@@ -79,7 +79,7 @@ export class IlpConnector {
                 data: payload.data
               },
               payload.peerId,
-              payload.replyHandle
+              payload.callbackDeadline
             )
           );
           break;
@@ -198,19 +198,10 @@ export class IlpConnector {
     );
   }
 
-  private async _handleInboundPrepare(
-    prepare: WirePrepare,
-    callbackUrl: string
-  ): Promise<void> {
+  private async _handleInboundPrepare(prepare: WirePrepare): Promise<void> {
     this._logger.debug(
       `Inbound prepare — packet ${prepare.packetId} peer ${prepare.peerId} amount ${prepare.amount} dest ${prepare.destinationIlpAddress}`
     );
-    const replyHandle = await this._correlationStore.createInboundReplyHandle({
-      peerId: prepare.peerId,
-      packetId: prepare.packetId,
-      expiresAt: prepare.expiresAt,
-      delivery: { kind: 'http', callbackUrl }
-    });
 
     await this._producer.send(
       new ProcessPreparePacketCmd({
@@ -219,7 +210,6 @@ export class IlpConnector {
         destinationIlpAddress: prepare.destinationIlpAddress,
         amount: prepare.amount,
         expiresAt: prepare.expiresAt,
-        replyHandle,
         executionCondition: prepare.executionCondition,
         data: prepare.data
       })

@@ -224,8 +224,6 @@ export interface ProcessPreparePacketCmdPayload {
   destinationIlpAddress: string;
   amount: string;
   expiresAt: string;
-  // Connector-issued id for the later fulfill/reject. Connector resolves it.
-  replyHandle: string;
   // base64-encoded 32-byte execution condition.
   executionCondition: string;
   // base64-encoded ILP packet data (opaque STREAM payload) - decoded by the
@@ -343,7 +341,7 @@ export class DispatchPreparePacketCmd extends CommandMsg {
 export interface DispatchFulfillPacketCmdPayload {
   peerId: string;
   packetId: string;
-  replyHandle: string;
+  callbackDeadline: string;
   fulfillment: string;
   data?: string;
 }
@@ -365,7 +363,7 @@ export class DispatchFulfillPacketCmd extends CommandMsg {
 export interface DispatchRejectPacketCmdPayload {
   peerId: string;
   packetId: string;
-  replyHandle: string;
+  callbackDeadline: string;
   rejectCode: string;
   rejectMessage?: string;
   triggeredBy?: string;

@@ -14,8 +14,7 @@
     "common-types-lib": "workspace:*",
     "ilp-domain-lib": "workspace:*",
     "ilp-implementations-lib": "workspace:*",
-    "implementations-lib": "workspace:*",
-    "ioredis": "~5.10.1"
+    "implementations-lib": "workspace:*"
   },
   "devDependencies": {
     "ilp-connector-service": "workspace:*",

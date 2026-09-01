@@ -12,6 +12,9 @@ interface BasePacketCorrelation {
   paymentIntentId: string;
   expiresAt: Date;
   state: PacketState;
+  // Present on inbound packets so a later fulfill/reject can rebuild the
+  // STREAM reply. Outbound packets never have one.
+  inboundPrepare?: InboundPrepareSnapshot;
 }
 
 interface QuotePacketCorrelation extends BasePacketCorrelation {
@@ -44,16 +47,6 @@ export interface InboundPrepareSnapshot {
   data: string;
 }
 
-// Connector-issued id for answering an inbound prepare later. Domain stores
-// and forwards it and the connector resolves how to deliver on the wire.
-export interface IInboundPacketReplyHandle {
-  packetId: string;
-  peerId: string;
-  replyHandle: string;
-  inboundPrepare: InboundPrepareSnapshot;
-  expiresAt: string;
-}
-
 // To be implemented by the adapter for sending packets.
 export interface IPeeringClient {
   dispatch(input: PacketDispatch): Promise<void>;
@@ -64,7 +57,9 @@ export interface IPeeringClient {
 export interface InboundReplyDispatch {
   peerId: string;
   packetId: string;
-  replyHandle: string;
+  // Prepare `expiresAt`, used as the RFC 0035 callback retry budget.
+  // Fulfill/reject packets have no expiry of their own.
+  callbackDeadline: string;
 }
 
 export interface FulfillDispatch extends InboundReplyDispatch {
