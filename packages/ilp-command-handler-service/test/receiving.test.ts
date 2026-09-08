@@ -27,6 +27,7 @@ import {
   IPeer,
   ENCRYPTION_KEY_STRING,
   decodeStreamPrepareAmount,
+  decodeStreamReply,
   ProcessPreparePacketCmd,
   ILPPaymentFailedEvent,
   ILPQuoteRequestReceivedEvent,
@@ -610,7 +611,10 @@ describe('IlpCommandHandler — remote quote receiving', () => {
         packetId: 'packet-pay-2',
         paymentIntentId: PAYMENT_INTENT_ID,
         inboundPaymentId: 'rp-1',
-        requestId: received.payload.requestId
+        requestId: received.payload.requestId,
+        receiveAmount: '100',
+        receiveAssetCode: 'USD',
+        receiveAssetScale: 2
       })
     ]);
 
@@ -642,6 +646,57 @@ describe('IlpCommandHandler — remote quote receiving', () => {
     assert.ok(sent);
     assert.equal(sent.payload.inboundPaymentId, 'rp-1');
     assert.equal(sent.payload.packetId, 'packet-pay-2');
+  });
+
+  test('fulfill after FX puts Payments receive amount in STREAM prepareAmount', async () => {
+    const { producer, consumer, credentials, fake } = await startedHandler();
+    const resolved = await fake.resolveStreamCredentials(
+      credentials.ilpAddress
+    );
+    assert.ok(resolved);
+    const { data, executionCondition, fulfillment } = fulfillablePrepareData(
+      resolved!.sharedSecret
+    );
+
+    await consumer.deliver([
+      inboundProbe(credentials.ilpAddress, {
+        packetId: 'packet-pay-fx',
+        amount: '100',
+        data,
+        executionCondition
+      })
+    ]);
+    producer.sent.length = 0;
+
+    await consumer.deliver([
+      new FulfillInboundPaymentCmd({
+        peerId: 'peer-1',
+        packetId: 'packet-pay-fx',
+        paymentIntentId: PAYMENT_INTENT_ID,
+        inboundPaymentId: 'rp-fx',
+        requestId: crypto.randomUUID(),
+        receiveAmount: '95',
+        receiveAssetCode: 'EUR',
+        receiveAssetScale: 2
+      })
+    ]);
+
+    const fulfillCmd = producer.sent.find(
+      (m) => m.msgName === DispatchFulfillPacketCmd.name
+    ) as DispatchFulfillPacketCmd;
+    assert.ok(fulfillCmd);
+    assert.equal(
+      fulfillCmd.payload.fulfillment,
+      fulfillment.toString('base64')
+    );
+    const decoded = decodeStreamReply(
+      resolved!.sharedSecret,
+      Buffer.from(fulfillCmd.payload.data as string, 'base64')
+    );
+    assert.equal(decoded?.prepareAmount, '95');
+    assert.equal(decoded?.assetCode, 'EUR');
+    assert.equal(decoded?.assetScale, 2);
+    assert.equal(decoded?.connectionClosed, false);
   });
 
   test('Payments fulfill after the prepare clock has passed still dispatches a wire fulfill', async () => {
@@ -676,7 +731,10 @@ describe('IlpCommandHandler — remote quote receiving', () => {
         packetId: 'packet-pay-expired',
         paymentIntentId: PAYMENT_INTENT_ID,
         inboundPaymentId: 'rp-expired',
-        requestId: stored.requestId
+        requestId: stored.requestId,
+        receiveAmount: '100',
+        receiveAssetCode: 'USD',
+        receiveAssetScale: 2
       })
     ]);
 
@@ -778,7 +836,10 @@ describe('IlpCommandHandler — remote quote receiving', () => {
         packetId: 'missing-packet',
         paymentIntentId: PAYMENT_INTENT_ID,
         inboundPaymentId: 'rp-missing',
-        requestId: crypto.randomUUID()
+        requestId: crypto.randomUUID(),
+        receiveAmount: '100',
+        receiveAssetCode: 'USD',
+        receiveAssetScale: 2
       })
     ]);
 

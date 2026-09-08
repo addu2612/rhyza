@@ -7,6 +7,7 @@ import { StreamServer, type IncomingMoney } from '@interledger/stream-receiver';
 import {
   ConnectionAssetDetailsFrame,
   ConnectionNewAddressFrame,
+  IlpPacketType,
   Packet,
   StreamMoneyFrame
 } from 'ilp-protocol-stream/dist/src/packet.js';
@@ -19,6 +20,7 @@ import {
 } from '../src/stream/decode.js';
 import {
   encodeOutgoingStreamPrepare,
+  encodeStreamFulfillReply,
   encodeStreamQuoteReply
 } from '../src/stream/encode.js';
 
@@ -188,6 +190,35 @@ describe('STREAM outgoing encode', () => {
         prepareAmount: '95'
       }),
       undefined
+    );
+  });
+
+  test('fulfill reply carries the wallet amount in STREAM prepareAmount', () => {
+    const sharedSecret = randomBytes(32);
+    const prepare = encodeOutgoingStreamPrepare({
+      sharedSecret,
+      minDestinationAmount: '100'
+    });
+
+    const replyData = encodeStreamFulfillReply({
+      sharedSecret,
+      prepareData: prepare.data,
+      prepareAmount: '95',
+      assetCode: 'EUR',
+      assetScale: 2
+    });
+    assert.ok(replyData);
+
+    const decoded = decodeStreamReply(sharedSecret, replyData!);
+    assert.equal(decoded?.prepareAmount, '95');
+    assert.equal(decoded?.assetCode, 'EUR');
+    assert.equal(decoded?.assetScale, 2);
+    assert.equal(decoded?.connectionClosed, false);
+
+    const reply = decryptPrepare(sharedSecret, replyData!);
+    assert.equal(reply.ilpPacketType, IlpPacketType.Fulfill);
+    assert.ok(
+      reply.frames.some((frame) => frame instanceof ConnectionAssetDetailsFrame)
     );
   });
 });

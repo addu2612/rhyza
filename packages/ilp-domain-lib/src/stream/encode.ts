@@ -76,9 +76,9 @@ export function encodeOutgoingStreamPrepare(
   return { data, executionCondition, fulfillment };
 }
 
-export interface StreamQuoteReplyInput {
+export interface StreamReplyInput {
   sharedSecret: Buffer;
-  // Encrypted STREAM prepare `data` from the inbound/outbound probe
+  // Encrypted STREAM prepare `data` from the inbound packet
   prepareData: Buffer;
   // Destination amount to put in STREAM `prepareAmount`
   prepareAmount: string;
@@ -95,7 +95,24 @@ export interface StreamQuoteReplyInput {
  * out of a command handler and poisoning the Kafka batch.
  */
 export function encodeStreamQuoteReply(
-  input: StreamQuoteReplyInput
+  input: StreamReplyInput
+): Buffer | undefined {
+  return encodeStreamReply(input, IlpPacketType.Reject);
+}
+
+/**
+ * Encrypted STREAM fulfill whose `prepareAmount` is Payments' receive amount
+ * (units after FX), not the inbound ILP hop amount.
+ */
+export function encodeStreamFulfillReply(
+  input: StreamReplyInput
+): Buffer | undefined {
+  return encodeStreamReply(input, IlpPacketType.Fulfill);
+}
+
+function encodeStreamReply(
+  input: StreamReplyInput,
+  packetType: typeof IlpPacketType.Reject | typeof IlpPacketType.Fulfill
 ): Buffer | undefined {
   const encryptionKey = hmacSha256(input.sharedSecret, ENCRYPTION_KEY_STRING);
 
@@ -116,7 +133,7 @@ export function encodeStreamQuoteReply(
 
   const reply = new Packet(
     request.sequence,
-    IlpPacketType.Reject,
+    packetType,
     input.prepareAmount,
     frames
   );
