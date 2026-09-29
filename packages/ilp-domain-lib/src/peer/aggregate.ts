@@ -20,8 +20,8 @@ import { PacketNotFound } from '../packet/errors';
 import {
   decodeStreamReply,
   encodeOutgoingStreamPrepare,
-  encodeStreamFulfillReply,
   encodeStreamQuoteReply,
+  rewriteStreamReplyAmount,
   inboundPrepareFrom,
   ResolveStreamCredentials,
   sha256,
@@ -651,8 +651,9 @@ export class IlpPeerAggregate {
       return fail('not_fulfillable', stored.paymentId);
     }
 
-    // Receipts (if the credentials encoded receipt setup) still use the
-    // connection total. One packet per payment, so this packet is the total.
+    // One packet per payment, so the credited amount is the connection total.
+    // accept() attaches a receipt when the credentials carried receipt setup.
+    // The rewrite keeps that frame and replaces the hop amount.
     streamReply.setTotalReceived(payload.receiveAmount);
     const fulfill = streamReply.accept();
 
@@ -660,9 +661,9 @@ export class IlpPeerAggregate {
       inboundPrepare.destinationIlpAddress
     );
     const streamData = resolved
-      ? encodeStreamFulfillReply({
+      ? rewriteStreamReplyAmount({
           sharedSecret: resolved.sharedSecret,
-          prepareData: Buffer.from(inboundPrepare.data, 'base64'),
+          replyData: fulfill.data,
           prepareAmount: payload.receiveAmount,
           assetCode: payload.receiveAssetCode,
           assetScale: payload.receiveAssetScale
@@ -675,7 +676,7 @@ export class IlpPeerAggregate {
         packetId: payload.packetId,
         callbackDeadline: inboundPrepare.expiresAt,
         fulfillment: fulfill.fulfillment.toString('base64'),
-        data: (streamData ?? fulfill.data).toString('base64')
+        data: streamData?.toString('base64')
       });
     } catch (err) {
       return fail(

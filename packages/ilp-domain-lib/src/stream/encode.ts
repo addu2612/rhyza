@@ -4,6 +4,7 @@ import {
   ConnectionAssetDetailsFrame,
   ConnectionNewAddressFrame,
   Frame,
+  FrameType,
   IlpPacketType,
   Packet,
   StreamMoneyFrame
@@ -138,4 +139,55 @@ function encodeStreamReply(
     frames
   );
   return encryptStreamData(encryptionKey, reply._serialize());
+}
+
+export interface RewriteStreamReplyInput {
+  sharedSecret: Buffer;
+  // Encrypted STREAM fulfill `data` from streamReply.accept().
+  replyData: Buffer;
+  // Payments' credited amount, in the wallet asset.
+  prepareAmount: string;
+  assetCode?: string;
+  assetScale?: number;
+}
+
+/**
+ * Same STREAM fulfill `accept()` built, with `prepareAmount` set to the
+ * credited amount. Frames already on the reply (receipt, asset details) stay.
+ * Asset details are added only when the library reply has none.
+ *
+ * Returns undefined when `replyData` is not a STREAM packet under this secret.
+ */
+export function rewriteStreamReplyAmount(
+  input: RewriteStreamReplyInput
+): Buffer | undefined {
+  const encryptionKey = hmacSha256(input.sharedSecret, ENCRYPTION_KEY_STRING);
+
+  let reply: Packet;
+  try {
+    reply = Packet._deserializeUnencrypted(
+      decryptStreamData(encryptionKey, input.replyData)
+    );
+  } catch {
+    return undefined;
+  }
+
+  const frames = [...reply.frames];
+  if (
+    input.assetCode !== undefined &&
+    input.assetScale !== undefined &&
+    !frames.some((frame) => frame.type === FrameType.ConnectionAssetDetails)
+  ) {
+    frames.push(
+      new ConnectionAssetDetailsFrame(input.assetCode, input.assetScale)
+    );
+  }
+
+  const rewritten = new Packet(
+    reply.sequence,
+    reply.ilpPacketType,
+    input.prepareAmount,
+    frames
+  );
+  return encryptStreamData(encryptionKey, rewritten._serialize());
 }

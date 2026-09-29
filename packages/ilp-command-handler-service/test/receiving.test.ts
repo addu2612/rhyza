@@ -699,6 +699,59 @@ describe('IlpCommandHandler — remote quote receiving', () => {
     assert.equal(decoded?.connectionClosed, false);
   });
 
+  test('a fulfill with no resolvable credentials omits STREAM data', async () => {
+    const fake = createFakeResolveStreamCredentials();
+    const inner = fake.resolveStreamCredentials.bind(fake);
+    let resolves = 0;
+    fake.resolveStreamCredentials = async (address) => {
+      const resolved = await inner(address);
+      resolves += 1;
+      return resolves === 1 ? resolved : undefined;
+    };
+    const { producer, consumer, credentials } = await startedHandler(
+      [PEER],
+      fake
+    );
+    assert.ok(credentials);
+    const resolved = await inner(credentials.ilpAddress);
+    assert.ok(resolved);
+    const { data, executionCondition, fulfillment } = fulfillablePrepareData(
+      resolved.sharedSecret
+    );
+
+    await consumer.deliver([
+      inboundProbe(credentials.ilpAddress, {
+        packetId: 'packet-pay-no-secret',
+        data,
+        executionCondition
+      })
+    ]);
+    producer.sent.length = 0;
+
+    await consumer.deliver([
+      new FulfillInboundPaymentCmd({
+        peerId: 'peer-1',
+        packetId: 'packet-pay-no-secret',
+        paymentIntentId: PAYMENT_INTENT_ID,
+        inboundPaymentId: 'rp-no-secret',
+        requestId: crypto.randomUUID(),
+        receiveAmount: '95',
+        receiveAssetCode: 'EUR',
+        receiveAssetScale: 2
+      })
+    ]);
+
+    const fulfillCmd = producer.sent.find(
+      (m) => m.msgName === DispatchFulfillPacketCmd.name
+    ) as DispatchFulfillPacketCmd;
+    assert.ok(fulfillCmd);
+    assert.equal(
+      fulfillCmd.payload.fulfillment,
+      fulfillment.toString('base64')
+    );
+    assert.equal(fulfillCmd.payload.data, undefined);
+  });
+
   test('Payments fulfill after the prepare clock has passed still dispatches a wire fulfill', async () => {
     const { producer, consumer, repo, credentials, fake } =
       await startedHandler();
