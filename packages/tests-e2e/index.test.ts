@@ -64,7 +64,11 @@ describe('E2E tests', () => {
     });
     assert.equal(asset.code, assetCode);
 
-    const sender = await createWalletAddress(assetCode, 'sender', 'test sender');
+    const sender = await createWalletAddress(
+      assetCode,
+      'sender',
+      'test sender'
+    );
     const receiver = await createWalletAddress(
       assetCode,
       'receiver',

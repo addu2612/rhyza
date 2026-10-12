@@ -1,5 +1,6 @@
 # API Changelog 0.0.16 vs. 0.0.17
 
+
 ## API Changes
 
 ### POST /wallet-addresses
