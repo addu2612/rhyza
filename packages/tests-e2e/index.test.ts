@@ -64,14 +64,15 @@ describe('E2E tests', () => {
     });
     assert.equal(asset.code, assetCode);
 
-    const senderAddress = 'test.com/sender';
-    await createWalletAddress(assetCode, senderAddress, 'test sender');
-
-    const receiverAddress = 'test.com/receiver';
-    await createWalletAddress(assetCode, receiverAddress, 'test receiver');
+    const sender = await createWalletAddress(assetCode, 'sender', 'test sender');
+    const receiver = await createWalletAddress(
+      assetCode,
+      'receiver',
+      'test receiver'
+    );
 
     const paymentIntent = await adminClient.paymentIntents.createPaymentIntent({
-      walletAddress: receiverAddress,
+      walletAddress: receiver.address,
       incomingAmount: 100
     });
 
@@ -80,7 +81,7 @@ describe('E2E tests', () => {
 
     const quote = await adminClient.quotes.createQuote({
       paymentIntentId,
-      walletAddress: senderAddress
+      walletAddress: sender.address
     });
 
     assert.ok(quote.id);
@@ -88,7 +89,7 @@ describe('E2E tests', () => {
 
     const payment = await adminClient.payments.createPayment({
       quoteId,
-      walletAddress: senderAddress,
+      walletAddress: sender.address,
       paymentIntentId
     });
 
@@ -108,18 +109,18 @@ describe('E2E tests', () => {
 
   const createWalletAddress = async (
     assetCode: string,
-    address: string,
+    pathName: string,
     publicName: string
   ) => {
     const walletAddress = await adminClient.walletAddresses.createWalletAddress(
       {
         assetCode,
-        address,
+        pathName,
         publicName
       }
     );
     assert.ok(walletAddress.id);
-    assert.equal(walletAddress.address, address);
+    assert.ok(walletAddress.address.endsWith(`/${pathName}`));
     return walletAddress;
   };
 

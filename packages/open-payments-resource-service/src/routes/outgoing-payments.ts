@@ -2,7 +2,7 @@
 
 import { randomUUID } from 'crypto';
 import { FastifyInstance, FastifyPluginOptions } from 'fastify';
-import { PalClient, parseAddressToDomainAndPathName } from 'pal-client-lib';
+import { PalClient, pathNameFromWalletAddress } from 'pal-client-lib';
 import {
   httpStatusFromGrpcError,
   toClientApiErrorResponse,
@@ -216,9 +216,8 @@ export async function outgoingPaymentRoutes(
       );
     }
 
-    const { domain, pathName } =
-      parseAddressToDomainAndPathName(walletAddressUrl);
-    const alias = await palClient.resolveWalletAddressAlias(domain, pathName);
+    const pathName = pathNameFromWalletAddress(walletAddressUrl);
+    const alias = await palClient.resolveWalletAddressAlias(null, pathName);
 
     if (!alias) {
       // An unknown wallet address returns an empty page rather than an

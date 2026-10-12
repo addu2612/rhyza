@@ -1,3 +1,15 @@
+# API Changelog 0.0.16 vs. 0.0.17
+
+## API Changes
+
+### POST /wallet-addresses
+- :warning: added the new required request property `pathName`
+- :warning: removed the request property `address`
+-  added the non-success response with the status `400`
+
+## Info
+-  a breaking change was detected but the major version did not increase, from `0.0.16` to `0.0.17`
+
 # API Changelog 0.0.15 vs. 0.0.16
 
 ## API Changes
