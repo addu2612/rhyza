@@ -9,7 +9,8 @@ import {
   RotateTokenCmd,
   RevokeTokenCmd,
   StartInteractionCmd,
-  FinishInteractionCmd
+  FinishInteractionCmd,
+  ValidateOutgoingPaymentGrantLimitCmd
 } from '../commands';
 import {
   DuplicateGrantError,
@@ -33,7 +34,9 @@ import {
   GrantInteractionStartedEvent,
   GrantInteractionStartFailedEvent,
   GrantInteractionFinishedEvent,
-  GrantInteractionFinishFailedEvent
+  GrantInteractionFinishFailedEvent,
+  OutgoingPaymentGrantLimitValidatedEvent,
+  OutgoingPaymentGrantLimitValidationFailedEvent
 } from './events';
 import {
   AccessAction,
@@ -53,7 +56,8 @@ import {
   ISubjectId,
   IWalletAddressService,
   IRotatedGrantUpdate,
-  IRevokedGrantUpdate
+  IRevokedGrantUpdate,
+  IUpdatedSpentAmountGrant
 } from './interfaces';
 import { GRANT_POLL_MS, GrantEntity } from './entity';
 import { JWK, validateSignature } from '@interledger/http-signature-utils';
@@ -78,6 +82,7 @@ export class GrantAggregate {
   private newGrantInteractions = new Set<string>(); // grant ids
   private updatedGrantInteractions = new Set<string>(); // grant ids
   private finishedInteractiveGrantIds = new Set<string>();
+  private updatedSpentAmountsGrantIds = new Set<string>();
   private walletAddressRequestMap = new Map<
     string,
     { kid: string; requestId: string }[]
@@ -140,7 +145,8 @@ export class GrantAggregate {
         cmd.msgName === StartInteractionCmd.name ||
         cmd.msgName === AcceptInteractionCmd.name ||
         cmd.msgName === RejectInteractionCmd.name ||
-        cmd.msgName === FinishInteractionCmd.name
+        cmd.msgName === FinishInteractionCmd.name ||
+        cmd.msgName === ValidateOutgoingPaymentGrantLimitCmd.name
       ) {
         grantIdSet.add(
           (
@@ -153,6 +159,7 @@ export class GrantAggregate {
               | AcceptInteractionCmd
               | RejectInteractionCmd
               | FinishInteractionCmd
+              | ValidateOutgoingPaymentGrantLimitCmd
           ).payload.id
         );
       }
@@ -231,6 +238,10 @@ export class GrantAggregate {
       } else if (cmd.msgName === FinishInteractionCmd.name) {
         event = this.handleFinishInteractionCommand(
           cmd as FinishInteractionCmd
+        );
+      } else if (cmd.msgName === ValidateOutgoingPaymentGrantLimitCmd.name) {
+        event = this.handleValidateOutgoingPaymentGrantLimitCommand(
+          cmd as ValidateOutgoingPaymentGrantLimitCmd
         );
       } else {
         this._logger.error(`Received unexpected command: ${cmd.msgName}`);
@@ -812,6 +823,41 @@ export class GrantAggregate {
     );
   }
 
+  private handleValidateOutgoingPaymentGrantLimitCommand(
+    cmd: ValidateOutgoingPaymentGrantLimitCmd
+  ) {
+    const { id, receiveAmountValue, debitAmountValue, createdAt } = cmd.payload;
+    try {
+      const grant = this.grantMap.get(id);
+      if (!grant) throw new GrantNotFoundError();
+
+      const spentAmounts = grant.validateAndUpdateSpentAmounts({
+        receiveAmountValue,
+        debitAmountValue,
+        createdAt
+      });
+
+      this.updatedSpentAmountsGrantIds.add(id);
+
+      return new OutgoingPaymentGrantLimitValidatedEvent(
+        {
+          id,
+          spentAmounts
+        },
+        cmd.requestId
+      );
+    } catch (err) {
+      return new OutgoingPaymentGrantLimitValidationFailedEvent(
+        {
+          grantId: id,
+          errorName: (err as Error).constructor.name,
+          message: (err as Error).message
+        },
+        cmd.requestId
+      );
+    }
+  }
+
   public async flush() {
     const promises = [];
 
@@ -939,6 +985,28 @@ export class GrantAggregate {
       );
     }
 
+    if (this.updatedSpentAmountsGrantIds.size > 0) {
+      const updatedSpentAmountsGrants: IUpdatedSpentAmountGrant[] = [];
+      for (const id of this.updatedSpentAmountsGrantIds) {
+        const grant = this.grantMap.get(id);
+        if (!grant || !grant.spentAmounts) {
+          this._logger.error(
+            `Grant ${id} missing from grantMap during spent amounts flush`
+          );
+          continue;
+        }
+
+        updatedSpentAmountsGrants.push({
+          id: grant.id,
+          spentAmounts: grant.spentAmounts
+        });
+      }
+
+      promises.push(
+        this._repo.storeUpdatedSpentAmountGrants(updatedSpentAmountsGrants)
+      );
+    }
+
     // TODO handle gracefully
     try {
       await Promise.all(promises);
@@ -954,6 +1022,7 @@ export class GrantAggregate {
       this.newGrantInteractions.clear();
       this.updatedGrantInteractions.clear();
       this.finishedInteractiveGrantIds.clear();
+      this.updatedSpentAmountsGrantIds.clear();
       this.continueCmdsToResolve = [];
       this.requestIdToClientKeyMap.clear();
       this.requestIdToClientNameMap.clear();
