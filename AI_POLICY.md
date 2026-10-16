@@ -14,8 +14,8 @@ Be aware that **generative AI may not describe Interledger technologies accurate
 
 **Work with it, don’t make it work instead of you.** Never ship, submit, or share AI-generated output (code, analysis, documents) without reviewing and verifying it yourself first. Trust, but verify.
 
-## 3 We Recommend Direct Communication To Be in Your Own Voice
+## 3. We Recommend Direct Communication To Be in Your Own Voice
 
-When communicating directly within interledger repositories, always use your own voice, not AI-generated text or what we like to call Work Slop.
+When communicating directly within Interledger repositories, always use your own voice, not AI-generated text or what we like to call Work Slop.
 
 AI can help you think through what you want to say, but the words you send to a community should be yours. Direct communication is how trust and working relationships are built. Humanity should still be the main focus in all things you do, so use AI only as a tool.
