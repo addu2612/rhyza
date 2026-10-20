@@ -1,4 +1,3 @@
-.openapi-generator-ignore
 apis/AssetsApi.ts
 apis/GrantsApi.ts
 apis/LiquidityApi.ts
