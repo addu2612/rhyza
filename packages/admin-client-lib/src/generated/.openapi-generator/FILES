@@ -1,5 +1,5 @@
 apis/AssetsApi.ts
-apis/DefaultApi.ts
+apis/GrantsApi.ts
 apis/LiquidityApi.ts
 apis/PaymentIntentsApi.ts
 apis/PaymentsApi.ts
