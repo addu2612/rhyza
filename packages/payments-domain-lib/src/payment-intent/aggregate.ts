@@ -5,7 +5,8 @@ import {
   IPalService,
   IPeer,
   ISentPayment,
-  IPendingQuote,
+  isRemoteSentPayment,
+  IRemoteSentPayment,
   IPaymentIntent,
   IPaymentIntentRepository,
   IRemotePaymentIntentService,
@@ -46,6 +47,7 @@ import {
   RatesError,
   MissingDestinationIlpAddressError,
   PeerNotFoundError,
+  InvalidPaymentAmountError,
   InvalidQuoteStateError,
   InvalidQuoteIdError
 } from './errors';
@@ -144,15 +146,25 @@ export class PaymentIntentAggregate {
       } else if (cmd.msgName === CreateQuoteCmd.name) {
         const payload = (cmd as CreateQuoteCmd).payload;
         walletAddressIdSet.add(payload.senderWalletAddressId);
-        if (payload.remoteUrl) {
-          remoteUrlByProposedId.set(payload.paymentIntentId, payload.remoteUrl);
+        if (payload.remotePaymentIntentUrl) {
+          remoteUrlByProposedId.set(
+            payload.paymentIntentId,
+            payload.remotePaymentIntentUrl
+          );
         } else {
           paymentIntentIdsSet.add(payload.paymentIntentId);
         }
       } else if (cmd.msgName === CreatePaymentCmd.name) {
         const payload = (cmd as CreatePaymentCmd).payload;
         walletAddressIdSet.add(payload.senderWalletAddressId);
-        paymentIntentIdsSet.add(payload.paymentIntentId);
+        if (payload.remotePaymentIntentUrl) {
+          remoteUrlByProposedId.set(
+            payload.paymentIntentId,
+            payload.remotePaymentIntentUrl
+          );
+        } else {
+          paymentIntentIdsSet.add(payload.paymentIntentId);
+        }
       } else if (cmd.msgName === ApprovePaymentCmd.name) {
         const payload = (cmd as ApprovePaymentCmd).payload;
         paymentIntentIdsSet.add(payload.paymentIntentId);
@@ -261,6 +273,9 @@ export class PaymentIntentAggregate {
         );
       } else if (cmd.msgName === CreatePaymentCmd.name) {
         const paymentCmd = cmd as CreatePaymentCmd;
+        // Quoteless remote payments resolve the peer at creation (the quote
+        // path binds it via addPendingRemoteQuote instead).
+        this._collectIlpAddress(paymentCmd, ilpAddressesToFetch);
         this._collectIntraAseFxLookup(
           paymentCmd.payload.paymentIntentId,
           paymentCmd.payload.senderWalletAddressId,
@@ -534,7 +549,8 @@ export class PaymentIntentAggregate {
         receiveAmount,
         debitAmount,
         paymentIntentId,
-        remoteUrl
+        remotePaymentIntentUrl: remoteUrl,
+        createdAt
       } = cmd.payload;
 
       const walletAddress = this.walletAddressMap.get(senderWalletAddressId);
@@ -590,7 +606,8 @@ export class PaymentIntentAggregate {
           },
           debitAmount: debitAmount ? BigInt(debitAmount) : undefined,
           receiveAmount: receiveAmount ? BigInt(receiveAmount) : undefined,
-          exchangeRate
+          exchangeRate,
+          createdAt: createdAt ? new Date(createdAt) : undefined
         });
 
         this.paymentIntentMap.set(paymentIntent.id, paymentIntent.toObject());
@@ -653,7 +670,8 @@ export class PaymentIntentAggregate {
         peerAssetScale: peer.assetScale,
         sourceAmount,
         debitAmount: debitAmount ? BigInt(debitAmount) : undefined,
-        receiveAmount: receiveAmount ? BigInt(receiveAmount) : undefined
+        receiveAmount: receiveAmount ? BigInt(receiveAmount) : undefined,
+        createdAt: createdAt ? new Date(createdAt) : undefined
       });
 
       this.paymentIntentMap.set(paymentIntent.id, paymentIntent.toObject());
@@ -695,6 +713,18 @@ export class PaymentIntentAggregate {
     }
   }
 
+  /**
+   * Creates a payment against a payment intent.
+   *
+   * With `quoteId`, amounts come from the completed quote.
+   * Without quote:
+   * - Local intents fall back to `debitAmount`, then to the intent's
+   *   `incomingAmount`. The receive amount comes from the intra-ASE rate.
+   * - Remote intents are fixed-send: `debitAmount` is required. The receive
+   *    amount is unknown without a quote and stays `null`, and the peer is
+   *    resolved here from the intent's destination ILP address (whereas the
+   *    quote path binds it during quoting instead).
+   */
   private async handleCreatePaymentCommand(cmd: CreatePaymentCmd) {
     this._logger.debug(
       `handleCreatePaymentCommand — paymentId: ${cmd.payload.id} paymentIntentId: ${cmd.payload.paymentIntentId} quoteId: ${cmd.payload.quoteId}`
@@ -706,6 +736,8 @@ export class PaymentIntentAggregate {
       paymentIntentId,
       quoteId,
       debitAmount,
+      createdAt,
+      remotePaymentIntentUrl: remoteUrl,
       grantId,
       metadata
     } = cmd.payload;
@@ -721,6 +753,12 @@ export class PaymentIntentAggregate {
         throw new WalletAddressInactiveError(
           `Wallet address ${senderWalletAddressId} is not active`
         );
+      }
+
+      if (remoteUrl) {
+        const fetchError =
+          this.remotePaymentIntentFetchErrors.get(paymentIntentId);
+        if (fetchError) throw fetchError;
       }
 
       const paymentIntentObj = this.paymentIntentMap.get(paymentIntentId);
@@ -750,21 +788,12 @@ export class PaymentIntentAggregate {
           exchangeRate,
           quoteId,
           debitAmount: debitAmount ? BigInt(debitAmount) : undefined,
+          createdAt: createdAt ? new Date(createdAt) : undefined,
           grantId,
           metadata: metadata ? JSON.parse(metadata) : undefined
         });
-      } else {
-        // TODO: support creating payment without quote
-        // In that case we need to fetch remote payment intent. May need
-        // new remoteUrl similiar to create quote then prefetch it. As long
-        // as we require a quote we know we'll have the payment intent.
-        if (!quoteId) {
-          throw new InvalidQuoteIdError(
-            `Remote payment ${paymentId} requires a quoteId`
-          );
-        }
-
-        payment = paymentIntent.addRemotePayment({
+      } else if (quoteId) {
+        payment = paymentIntent.addRemotePaymentFromQuote({
           id: paymentId,
           quoteId,
           senderWalletAddress: {
@@ -773,6 +802,48 @@ export class PaymentIntentAggregate {
             assetScale: walletAddress.assetScale,
             assetCode: walletAddress.assetCode
           },
+          createdAt: createdAt ? new Date(createdAt) : undefined,
+          grantId,
+          metadata: metadata ? JSON.parse(metadata) : undefined
+        });
+      } else {
+        // Quoteless remote payment is fixed-send only. The intent was imported
+        // via remoteUrl and the the peer is resolved here since we dont have
+        // it from the quoting step. receiveAmount is unkonwn (null).
+        if (!debitAmount) {
+          throw new InvalidPaymentAmountError(
+            `Remote payment ${paymentId} without a quoteId requires a debitAmount`
+          );
+        }
+
+        const { destinationIlpAddress } = paymentIntent;
+        if (!destinationIlpAddress) {
+          throw new MissingDestinationIlpAddressError(
+            `Payment intent ${paymentIntent.id} is missing destinationIlpAddress`
+          );
+        }
+
+        const peerFetchError = this.peerFetchErrors.get(destinationIlpAddress);
+        if (peerFetchError) throw peerFetchError;
+
+        const peer = this.peerMap.get(destinationIlpAddress);
+        if (!peer) {
+          throw new PeerNotFoundError(
+            `No peer found for ILP address ${destinationIlpAddress}`
+          );
+        }
+
+        payment = paymentIntent.addRemotePayment({
+          id: paymentId,
+          senderWalletAddress: {
+            id: senderWalletAddressId,
+            address: senderWalletAddress,
+            assetScale: walletAddress.assetScale,
+            assetCode: walletAddress.assetCode
+          },
+          debitAmount: BigInt(debitAmount),
+          peerId: peer.peerId,
+          createdAt: createdAt ? new Date(createdAt) : undefined,
           grantId,
           metadata: metadata ? JSON.parse(metadata) : undefined
         });
@@ -789,10 +860,14 @@ export class PaymentIntentAggregate {
         {
           id: payment.id,
           paymentIntentId: payment.paymentIntentId,
+          quoteId: payment.quoteId,
           senderWalletAddressId: payment.senderWalletAddressId,
           senderWalletAddress: payment.senderWalletAddress,
           debitAmount: String(payment.debitAmount),
-          receiveAmount: String(payment.receiveAmount),
+          receiveAmount:
+            payment.receiveAmount === null
+              ? null
+              : String(payment.receiveAmount),
           sentAmount: String(payment.sentAmount),
           state: payment.state,
           createdAt: payment.createdAt,
@@ -846,26 +921,17 @@ export class PaymentIntentAggregate {
           `Pending quote ${quoteId} not found for payment intent ${paymentIntentId}`
         );
       }
-      const pendingQuote = pendingQuoteObj as IPendingQuote;
+      const { route, debitAmount: requestedDebit } = pendingQuoteObj;
 
-      const {
-        peerId,
-        peerAssetCode,
-        sourceAmount,
-        senderAssetCode,
-        debitAmount: requestedDebit
-      } = pendingQuote;
-
-      if (!peerId || !peerAssetCode || !sourceAmount || !senderAssetCode) {
-        // Should never happen once persistence round-trips faithfully — a hit
-        // here means a pending remote quote was stored/read lossily.
+      if (!route) {
         this._logger.warn(
-          `handleCompleteRemoteQuoteCommand — pending quote ${quoteId} (paymentIntent ${paymentIntentId}) is missing required remote peer fields (peerId, peerAssetCode, sourceAmount, senderAssetCode)`
+          `handleCompleteRemoteQuoteCommand — pending quote ${quoteId} (paymentIntent ${paymentIntentId}) has no route`
         );
         throw new InvalidQuoteStateError(
-          `Pending quote ${quoteId} is missing required remote peer fields (peerId, peerAssetCode, sourceAmount, senderAssetCode)`
+          `Pending quote ${quoteId} has no route; it cannot be completed as remote`
         );
       }
+      const { peerId, peerAssetCode, senderAssetCode } = route;
 
       let fxRate: number | undefined;
       if (senderAssetCode !== peerAssetCode) {
@@ -1071,7 +1137,10 @@ export class PaymentIntentAggregate {
               senderWalletAddressId: payment.senderWalletAddressId,
               senderWalletAddress: payment.senderWalletAddress,
               debitAmount: String(payment.debitAmount),
-              receiveAmount: String(payment.receiveAmount),
+              receiveAmount:
+                payment.receiveAmount === null
+                  ? null
+                  : String(payment.receiveAmount),
               sentAmount: String(payment.sentAmount),
               state: payment.state,
               createdAt: payment.createdAt,
@@ -1127,7 +1196,7 @@ export class PaymentIntentAggregate {
           senderWalletAddress: payment.senderWalletAddress,
           senderWalletAddressId: payment.senderWalletAddressId,
           destinationIlpAddress: paymentIntent.destinationIlpAddress,
-          peerId: paymentIntent.peerId!,
+          peerId: payment.peerId,
           requestId: cmd.requestId,
           debitAmount: String(payment.debitAmount),
           assetCode: payment.assetCode,
@@ -1187,7 +1256,7 @@ export class PaymentIntentAggregate {
       // fetch, and we deliberately don't persist it on the intent nor prefetch
       // to ensure its not stale.
       const remoteDetails =
-        await this._remotePaymentIntentService.fetchIncomingPayment(
+        await this._remotePaymentIntentService.fetchPaymentIntent(
           paymentIntent.remoteUrl
         );
 
@@ -1214,10 +1283,13 @@ export class PaymentIntentAggregate {
           paymentId: payment.id,
           ledgerTransferId,
           destinationIlpAddress: remoteDetails.destinationIlpAddress,
-          peerId: paymentIntent.peerId!,
+          peerId: payment.peerId,
           requestId: cmd.requestId,
           debitAmount: String(payment.debitAmount),
-          receiveAmount: String(payment.receiveAmount),
+          receiveAmount:
+            payment.receiveAmount === null
+              ? null
+              : String(payment.receiveAmount),
           assetCode: payment.assetCode,
           assetScale: payment.assetScale,
           sharedSecret: remoteDetails.sharedSecret,
@@ -1278,7 +1350,10 @@ export class PaymentIntentAggregate {
           paymentIntentId: payment.paymentIntentId,
           senderWalletAddress: payment.senderWalletAddress,
           debitAmount: String(payment.debitAmount),
-          receiveAmount: String(payment.receiveAmount),
+          receiveAmount:
+            payment.receiveAmount === null
+              ? null
+              : String(payment.receiveAmount),
           sentAmount: String(payment.sentAmount),
           state: payment.state,
           createdAt: payment.createdAt,
@@ -1324,7 +1399,7 @@ export class PaymentIntentAggregate {
       }
 
       const paymentIntent = PaymentIntent.fromObject(paymentIntentObj);
-      const existingPayment = paymentIntent.sentPayments.find(
+      const existingPayment = paymentIntent.remoteSentPayments.find(
         (p) => p.id === paymentId
       );
       if (!existingPayment) {
@@ -1363,7 +1438,7 @@ export class PaymentIntentAggregate {
           paymentId: payment.id,
           ledgerTransferId: existingPayment.ledgerTransferId,
           destinationIlpAddress: paymentIntent.destinationIlpAddress,
-          peerId: paymentIntent.peerId!,
+          peerId: payment.peerId,
           requestId: cmd.requestId,
           debitAmount: String(payment.debitAmount),
           assetCode: payment.assetCode,
@@ -1405,7 +1480,7 @@ export class PaymentIntentAggregate {
       }
 
       const paymentIntent = PaymentIntent.fromObject(paymentIntentObj);
-      const existingPayment = paymentIntent.sentPayments.find(
+      const existingPayment = paymentIntent.remoteSentPayments.find(
         (p) => p.id === paymentId
       );
       if (!existingPayment) {
@@ -1450,7 +1525,7 @@ export class PaymentIntentAggregate {
           rejectCode,
           rejectMessage,
           destinationIlpAddress: paymentIntent.destinationIlpAddress,
-          peerId: paymentIntent.peerId!,
+          peerId: payment.peerId,
           requestId: cmd.requestId,
           debitAmount: String(payment.debitAmount),
           assetCode: payment.assetCode,
@@ -1513,7 +1588,10 @@ export class PaymentIntentAggregate {
             senderWalletAddressId: payment.senderWalletAddressId,
             senderWalletAddress: payment.senderWalletAddress,
             debitAmount: String(payment.debitAmount),
-            receiveAmount: String(payment.receiveAmount),
+            receiveAmount:
+              payment.receiveAmount === null
+                ? null
+                : String(payment.receiveAmount),
             sentAmount: String(payment.sentAmount),
             state: payment.state,
             createdAt: payment.createdAt,
@@ -1979,7 +2057,7 @@ export class PaymentIntentAggregate {
         );
         try {
           const remotePaymentIntent =
-            await this._remotePaymentIntentService.fetchIncomingPayment(url);
+            await this._remotePaymentIntentService.fetchPaymentIntent(url);
           this._logger.debug(
             `_importRemotePaymentIntents — fetched url: ${url} assetCode: ${remotePaymentIntent.assetCode}`
           );
@@ -2065,7 +2143,10 @@ export class PaymentIntentAggregate {
     };
   }
 
-  private _collectIlpAddress(cmd: CreateQuoteCmd, into: Set<string>): void {
+  private _collectIlpAddress(
+    cmd: CreateQuoteCmd | CreatePaymentCmd,
+    into: Set<string>
+  ): void {
     const { paymentIntentId } = cmd.payload;
     if (this.remotePaymentIntentFetchErrors.has(paymentIntentId)) return;
     const intent = this.paymentIntentMap.get(paymentIntentId);
@@ -2084,11 +2165,10 @@ export class PaymentIntentAggregate {
     if (!intent) return;
     const quote = intent.quotes.find((q) => q.id === quoteId);
     if (!quote || quote.state !== 'PENDING') return;
-    const pending = quote as IPendingQuote;
-    const { peerId, peerAssetCode, senderAssetCode, sourceAmount } = pending;
-    if (!peerId || !peerAssetCode || !senderAssetCode || !sourceAmount) return;
+    if (!quote.route) return;
+    const { peerId, peerAssetCode, senderAssetCode } = quote.route;
     if (senderAssetCode === peerAssetCode) return;
-    const direction: 'source' | 'destination' = pending.debitAmount
+    const direction: 'source' | 'destination' = quote.debitAmount
       ? 'source'
       : 'destination';
     const key = fxKey(peerId, direction, senderAssetCode);
@@ -2164,6 +2244,41 @@ export class PaymentIntentAggregate {
     }
 
     map.get(paymentIntentId)?.push(idToAppend);
+  }
+
+  /**
+   * The payments named by `ids`, projected for storage. One pass, with a set
+   * for the id lookup — flush does this for every update group.
+   */
+  private _collectPayments<T>(
+    payments: ISentPayment[],
+    ids: string[],
+    project: (payment: ISentPayment) => T
+  ): T[] {
+    const wanted = new Set(ids);
+    const collected: T[] = [];
+    for (const payment of payments) {
+      if (wanted.has(payment.id)) {
+        collected.push(project(payment));
+      }
+    }
+    return collected;
+  }
+
+  /** As `_collectPayments`, for groups whose columns only remote payments have. */
+  private _collectRemotePayments<T>(
+    payments: ISentPayment[],
+    ids: string[],
+    project: (payment: IRemoteSentPayment) => T
+  ): T[] {
+    const wanted = new Set(ids);
+    const collected: T[] = [];
+    for (const payment of payments) {
+      if (wanted.has(payment.id) && isRemoteSentPayment(payment)) {
+        collected.push(project(payment));
+      }
+    }
+    return collected;
   }
 
   public async flush() {
@@ -2441,13 +2556,11 @@ export class PaymentIntentAggregate {
             state: paymentIntent.state,
             receivedAmount: paymentIntent.receivedAmount
           },
-          sentPayments: paymentIntent.sentPayments
-            .filter((p) => paymentIds.includes(p.id))
-            .map((p) => ({
-              id: p.id,
-              state: p.state,
-              sentAmount: p.sentAmount
-            }))
+          sentPayments: this._collectPayments(
+            paymentIntent.sentPayments,
+            paymentIds,
+            (p) => ({ id: p.id, state: p.state, sentAmount: p.sentAmount })
+          )
         });
       }
 
@@ -2486,13 +2599,11 @@ export class PaymentIntentAggregate {
             state: paymentIntent.state,
             receivedAmount: paymentIntent.receivedAmount
           },
-          sentPayments: paymentIntent.sentPayments
-            .filter((p) => paymentIds.includes(p.id))
-            .map((p) => ({
-              id: p.id,
-              state: p.state,
-              sentAmount: p.sentAmount
-            }))
+          sentPayments: this._collectPayments(
+            paymentIntent.sentPayments,
+            paymentIds,
+            (p) => ({ id: p.id, state: p.state, sentAmount: p.sentAmount })
+          )
         });
       }
 
@@ -2517,9 +2628,11 @@ export class PaymentIntentAggregate {
         }
 
         updates.push({
-          sentPayments: paymentIntent.sentPayments
-            .filter((p) => paymentIds.includes(p.id))
-            .map((p) => ({ id: p.id, state: p.state }))
+          sentPayments: this._collectPayments(
+            paymentIntent.sentPayments,
+            paymentIds,
+            (p) => ({ id: p.id, state: p.state })
+          )
         });
       }
 
@@ -2548,13 +2661,15 @@ export class PaymentIntentAggregate {
         }
 
         updates.push({
-          sentPayments: paymentIntent.sentPayments
-            .filter((p) => paymentIds.includes(p.id))
-            .map((p) => ({
+          sentPayments: this._collectRemotePayments(
+            paymentIntent.sentPayments,
+            paymentIds,
+            (p) => ({
               id: p.id,
               state: p.state,
               ledgerTransferId: p.ledgerTransferId ?? ''
-            }))
+            })
+          )
         });
       }
 
@@ -2579,9 +2694,11 @@ export class PaymentIntentAggregate {
         }
 
         updates.push({
-          sentPayments: paymentIntent.sentPayments
-            .filter((p) => paymentIds.includes(p.id))
-            .map((p) => ({ id: p.id, state: p.state }))
+          sentPayments: this._collectPayments(
+            paymentIntent.sentPayments,
+            paymentIds,
+            (p) => ({ id: p.id, state: p.state })
+          )
         });
       }
 
@@ -2610,13 +2727,11 @@ export class PaymentIntentAggregate {
         }
 
         updates.push({
-          sentPayments: paymentIntent.sentPayments
-            .filter((p) => paymentIds.includes(p.id))
-            .map((p) => ({
-              id: p.id,
-              state: p.state,
-              failReason: p.failReason
-            }))
+          sentPayments: this._collectRemotePayments(
+            paymentIntent.sentPayments,
+            paymentIds,
+            (p) => ({ id: p.id, state: p.state, failReason: p.failReason })
+          )
         });
       }
 
@@ -2645,13 +2760,11 @@ export class PaymentIntentAggregate {
         }
 
         updates.push({
-          sentPayments: paymentIntent.sentPayments
-            .filter((p) => paymentIds.includes(p.id))
-            .map((p) => ({
-              id: p.id,
-              state: p.state,
-              failReason: p.failReason
-            }))
+          sentPayments: this._collectRemotePayments(
+            paymentIntent.sentPayments,
+            paymentIds,
+            (p) => ({ id: p.id, state: p.state, failReason: p.failReason })
+          )
         });
       }
 
@@ -2681,14 +2794,16 @@ export class PaymentIntentAggregate {
         }
 
         updates.push({
-          sentPayments: paymentIntent.sentPayments
-            .filter((p) => paymentIds.includes(p.id))
-            .map((p) => ({
+          sentPayments: this._collectPayments(
+            paymentIntent.sentPayments,
+            paymentIds,
+            (p) => ({
               id: p.id,
               state: p.state,
               cancelledAt: p.cancelledAt ?? new Date(),
               cancelReason: p.cancelReason
-            }))
+            })
+          )
         });
       }
 

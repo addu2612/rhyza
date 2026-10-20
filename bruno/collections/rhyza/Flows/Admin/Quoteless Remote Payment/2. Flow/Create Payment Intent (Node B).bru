@@ -1,0 +1,28 @@
+meta {
+  name: Create Payment Intent (Node B)
+  type: http
+  seq: 1
+}
+
+post {
+  url: http://{{adminB}}/payment-intents
+  body: json
+  auth: none
+}
+
+body:json {
+  {
+    "walletAddress": "test.com/receiver",
+    "incomingAmount": 1000
+  }
+}
+
+script:post-response {
+  const body = res.getBody();
+  if (body?.id) {
+    bru.setVar("receiverIntentIdB", body.id);
+  }
+  if (body?.openPaymentsUrl) {
+    bru.setVar("receiverIntentUrl", body.openPaymentsUrl);
+  }
+}

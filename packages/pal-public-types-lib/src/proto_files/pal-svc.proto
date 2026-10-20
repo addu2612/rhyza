@@ -1,5 +1,5 @@
 syntax = "proto3";
-package rafiki.pal.svc;
+package rhyza.pal.svc;
 
 import "google/protobuf/empty.proto";
 

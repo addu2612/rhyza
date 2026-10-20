@@ -1,0 +1,27 @@
+meta {
+  name: Create Outgoing Payment from Quote
+  type: http
+  seq: 10
+}
+
+post {
+  url: http://{{openPaymentsResourceServerUrl}}/outgoing-payments
+  body: json
+  auth: none
+}
+
+body:json {
+  {
+    "walletAddress": "https://test.com/sender",
+    "quoteId": "{{quoteId}}"
+  }
+}
+
+script:post-response {
+  const body = res.getBody();
+  
+  if (body?.id) {
+    bru.setVar("outgoingPaymentId", body.id);
+    bru.setVar("outgoingPaymentIdSegment", body.id.split("/").pop());
+  }
+}

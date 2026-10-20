@@ -11,7 +11,7 @@ info:
     identifier: ISC
 servers:
   - url: /
-    description: Base URL is determined by the Rafiki deployment.
+    description: Base URL is determined by the Rhyza deployment.
 security:
   - IdpSecretAuth: []
 paths:

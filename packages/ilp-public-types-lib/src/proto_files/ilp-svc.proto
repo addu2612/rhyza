@@ -1,5 +1,5 @@
 syntax = "proto3";
-package rafiki.ilp.svc;
+package rhyza.ilp.svc;
 
 service IlpGrpc {
   rpc CreatePeer(CreatePeerRequest) returns (CreatePeerResponse);

@@ -24,7 +24,7 @@ describe('createFakeResolveStreamCredentials', () => {
 
   test('returns undefined for an unknown destination', async () => {
     const fake = createFakeResolveStreamCredentials();
-    const resolved = await fake.resolveStreamCredentials('test.rafiki.unknown');
+    const resolved = await fake.resolveStreamCredentials('test.rhyza.unknown');
     assert.equal(resolved, undefined);
   });
 });

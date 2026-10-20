@@ -1,0 +1,15 @@
+meta {
+  name: Get Incoming Payment
+  type: http
+  seq: 1
+}
+
+get {
+  url: http://{{adminApiUrl}}/payment-intents/{{paymentIntentId}}
+  body: none
+  auth: none
+}
+
+docs {
+  Reads the payment. The state should be COMPLETED, and the receivedAmount should be equal to the incomingAmount.
+}

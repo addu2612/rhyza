@@ -22,15 +22,15 @@ export class KafkaAdmin implements IKafkaAdmin {
   }
 
   async connect(): Promise<void> {
-    this._logger?.debug('RafikiKafkaAdmin - connect called...');
+    this._logger?.debug('RhyzaKafkaAdmin - connect called...');
     await this._admin.connect();
-    this._logger?.info('RafikiKafkaAdmin - connected');
+    this._logger?.info('RhyzaKafkaAdmin - connected');
   }
 
   async disconnect(): Promise<void> {
-    this._logger?.debug('RafikiKafkaAdmin - disconnect called...');
+    this._logger?.debug('RhyzaKafkaAdmin - disconnect called...');
     await this._admin.disconnect();
-    this._logger?.info('RafikiKafkaAdmin - disconnected');
+    this._logger?.info('RhyzaKafkaAdmin - disconnected');
   }
 
   async createTopics(

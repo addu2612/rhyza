@@ -11,7 +11,7 @@ import {
 } from '@grpc/grpc-js';
 
 import {
-  RafikiAuthService,
+  RhyzaAuthService,
   HealthService,
   HealthCheckRequest,
   HealthCheckResponse,
@@ -137,7 +137,7 @@ export class AuthServiceServer {
       watch: this._handleHealthWatchStream.bind(this)
     });
 
-    this._server.addService(RafikiAuthService, {
+    this._server.addService(RhyzaAuthService, {
       createGrant: this._handleUnary.bind(this),
       continueGrant: this._handleUnary.bind(this),
       revokeGrant: this._handleUnary.bind(this),

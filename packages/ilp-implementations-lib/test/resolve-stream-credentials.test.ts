@@ -12,7 +12,7 @@ import {
 describe('createResolveStreamCredentials', () => {
   test('round-trips paymentIntentId and sharedSecret from generateCredentials', async () => {
     const serverSecret = randomBytes(32);
-    const serverAddress = 'test.rafiki';
+    const serverAddress = 'test.rhyza';
     const streamServer = createStreamServer({ serverSecret, serverAddress });
     const resolveStreamCredentials = createResolveStreamCredentials({
       streamServer,
@@ -36,12 +36,12 @@ describe('createResolveStreamCredentials', () => {
     const serverSecret = randomBytes(32);
     const streamServer = createStreamServer({
       serverSecret,
-      serverAddress: 'test.rafiki'
+      serverAddress: 'test.rhyza'
     });
     const resolveStreamCredentials = createResolveStreamCredentials({
       streamServer,
       serverSecret,
-      serverAddress: 'test.rafiki'
+      serverAddress: 'test.rhyza'
     });
 
     const resolved = await resolveStreamCredentials('other.prefix.notours');

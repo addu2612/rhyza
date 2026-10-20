@@ -1,0 +1,36 @@
+meta {
+  name: Create Payment (Node A)
+  type: http
+  seq: 2
+}
+
+post {
+  url: http://{{adminA}}/payments
+  body: json
+  auth: none
+}
+
+body:json {
+  {
+    "walletAddress": "test.com/sender",
+    "paymentIntentUrl": "{{receiverIntentUrl}}",
+    "debitAmount": 1000
+  }
+}
+
+script:post-response {
+  const body = res.getBody();
+  if (body?.id) {
+    bru.setVar("paymentId", body.id);
+  }
+  if (body?.paymentIntentId) {
+    bru.setVar("quotelessPaymentIntentId", body.paymentIntentId);
+  }
+}
+
+docs {
+  No quoteId: the intent is identified by `paymentIntentUrl` (Node A imports
+  it) and `debitAmount` fixes the send amount. The response's
+  `paymentIntentId` is Node A's canonical local id for the imported intent —
+  saved for Verify.
+}

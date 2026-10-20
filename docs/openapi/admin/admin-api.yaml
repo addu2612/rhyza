@@ -1,7 +1,7 @@
 openapi: 3.1.0
 info:
   title: Rhyza Admin API
-  version: 0.0.11
+  version: 0.0.13
   license:
     name: ISC
     identifier: ISC
@@ -97,7 +97,7 @@ paths:
               $ref: '#/components/schemas/AssetCreate'
     get:
       summary: Get Assets
-      description: Fetch every asset. When the node has no assets, `assets` is an empty array.
+      description: Fetch every asset. When the instance has no assets, `assets` is an empty array.
       tags:
         - assets
       operationId: getAssets
@@ -471,7 +471,10 @@ paths:
         content:
           application/json:
             schema:
-              $ref: '#/components/schemas/QuoteCreate'
+              type: object
+              oneOf:
+                - $ref: '#/components/schemas/QuoteCreateFromPaymentIntentId'
+                - $ref: '#/components/schemas/QuoteCreateFromPaymentIntentUrl'
   /payments:
     get:
       summary: List Payments
@@ -569,7 +572,10 @@ paths:
         content:
           application/json:
             schema:
-              $ref: '#/components/schemas/PaymentCreate'
+              type: object
+              oneOf:
+                - $ref: '#/components/schemas/PaymentCreateFromPaymentIntentId'
+                - $ref: '#/components/schemas/PaymentCreateFromPaymentIntentUrl'
   /payment-intents/{intentId}/payments/{id}/approve:
     post:
       summary: Approve Payment
@@ -683,9 +689,7 @@ paths:
     post:
       summary: Deposit Liquidity
       description: >-
-        Deposit liquidity so the node can send payments. Debits the asset system
-        account and credits the peer's ASE liquidity account by producing a
-        ledger DepositToAse command. This is request-response style, returns 200 when complete.
+        Add funds to a peer's liquidity account so ILP payments can be sent to them.
       tags:
         - liquidity
       operationId: Liquidity_deposit
@@ -709,7 +713,7 @@ paths:
                   example: USD
                 peerId:
                   type: string
-                  description: Peer whose ASE liquidity account is credited.
+                  description: The identifier of the peer.
                 amount:
                   type: integer
                   description: >-
@@ -833,7 +837,7 @@ components:
         peerId:
           type: ['string', 'null']
           description: >-
-            Peer whose rate this is. Null stores an intra-ASE rate.
+            Peer whose rate this is. Null stores an intra-FSP rate.
         rateTtlSecs:
           type: number
           exclusiveMinimum: 0
@@ -872,7 +876,7 @@ components:
           description: The unique code of the created asset.
     Asset:
       type: object
-      description: An asset known to the node.
+      description: An asset known to the instance.
       required:
         - code
         - scale
@@ -1152,9 +1156,12 @@ components:
         destinationIlpAddress:
           type: string
           description: The ILP address of the payment intent.
-    QuoteCreate:
+    QuoteCreateBase:
       type: object
-      description: Schema for creating a payment quote.
+      description: >-
+        Fields common to both ways of creating a quote. Not used directly as a
+        request body — see QuoteCreateFromPaymentIntentId and
+        QuoteCreateFromPaymentIntentUrl.
       required:
         - walletAddress
       properties:
@@ -1164,18 +1171,41 @@ components:
         walletAddress:
           type: string
           description: The sender's wallet address.
-        paymentIntentId:
-          type: string
-          description: The ID of the payment intent this quote is for.
-        paymentIntentUrl:
-          type: string
-          description: The URL of the payment intent this quote is for.
         debitAmount:
           type: string
           description: The amount to be debited from the sender's account.
         receiveAmount:
           type: string
           description: The amount to be received by the recipient.
+    QuoteCreateFromPaymentIntentId:
+      description: >-
+        Quotes a payment intent this instance already holds, named by its local
+        id.
+      allOf:
+        - $ref: '#/components/schemas/QuoteCreateBase'
+        - type: object
+          required:
+            - paymentIntentId
+          properties:
+            paymentIntentId:
+              type: string
+              description: The ID of the payment intent this quote is for.
+    QuoteCreateFromPaymentIntentUrl:
+      description: >-
+        Quotes a payment intent named by its URL. The intent may be held by
+        another instance, in which case it is imported on first use; the canonical
+        local id is returned as paymentIntentId.
+      allOf:
+        - $ref: '#/components/schemas/QuoteCreateBase'
+        - type: object
+          required:
+            - paymentIntentUrl
+          properties:
+            paymentIntentUrl:
+              type: string
+              format: uri
+              description: >-
+                The URL of the payment intent this quote is for.
     Quote:
       type: object
       description: Represents a payment quote with estimated amounts and exchange rates.
@@ -1214,12 +1244,14 @@ components:
         exchangeRate:
           type: number
           description: The exchange rate of quote.
-    PaymentCreate:
+    PaymentCreateBase:
       type: object
-      description: Schema for creating a new payment.
+      description: >-
+        Fields common to both ways of creating a payment. Not used directly as
+        a request body — see PaymentCreateFromIntentId and
+        PaymentCreateFromIntentUrl.
       required:
         - walletAddress
-        - paymentIntentId
       properties:
         id:
           type: string
@@ -1227,9 +1259,6 @@ components:
         walletAddress:
           type: string
           description: The sender's wallet address.
-        paymentIntentId:
-          type: string
-          description: The ID of the payment intent being paid.
         quoteId:
           type: string
           description: The ID of the quote used for this payment.
@@ -1238,8 +1267,37 @@ components:
           description: The amount to debit from the sender.
         metadata:
           type: object
-          description: Additional arbitrary data associated with the payment intent.
+          description: Additional arbitrary data associated with the payment.
           additionalProperties: true
+    PaymentCreateFromPaymentIntentId:
+      description: >-
+        Creates a payment against a payment intent this instance already holds,
+        named by its local id.
+      allOf:
+        - $ref: '#/components/schemas/PaymentCreateBase'
+        - type: object
+          required:
+            - paymentIntentId
+          properties:
+            paymentIntentId:
+              type: string
+              description: The ID of the payment intent being paid.
+    PaymentCreateFromPaymentIntentUrl:
+      description: >-
+        Creates a payment against a payment intent named by its URL. The
+        intent may be held by another instance, in which case it is imported on
+        first use; the canonical local id is returned as paymentIntentId.
+      allOf:
+        - $ref: '#/components/schemas/PaymentCreateBase'
+        - type: object
+          required:
+            - paymentIntentUrl
+          properties:
+            paymentIntentUrl:
+              type: string
+              format: uri
+              description: >-
+                The URL of the incoming payment being paid.
     PaymentCreateResponse:
       type: object
       description: Response schema after initiating a payment.
@@ -1293,8 +1351,13 @@ components:
           $ref: '#/components/schemas/Amount'
           description: The amount debited from the sender, in the sender-side asset.
         receiveAmount:
-          $ref: '#/components/schemas/Amount'
-          description: The amount received by the destination, in the receive-side asset.
+          oneOf:
+            - $ref: '#/components/schemas/Amount'
+            - type: 'null'
+          description: >-
+            The amount received by the destination, in the receive-side asset.
+            Null for a payment created without a quote, which fixes only the
+            debit side.
         sentAmount:
           $ref: '#/components/schemas/Amount'
           description: The total amount sent so far, in the sender-side asset.

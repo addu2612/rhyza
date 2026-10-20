@@ -1,0 +1,16 @@
+meta {
+  name: Revoke Wallet Address Key
+  type: http
+  seq: 10
+}
+
+post {
+  url: http://{{adminApiUrl}}/wallet-addresses/{{senderWalletAddressId}}/keys/{{walletAddressKeyId}}/revoke
+  body: none
+  auth: inherit
+}
+
+settings {
+  encodeUrl: true
+  timeout: 0
+}

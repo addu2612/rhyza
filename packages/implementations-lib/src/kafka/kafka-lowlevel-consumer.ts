@@ -267,7 +267,7 @@ export class KafkaLowLevelConsumer implements IMessageConsumer {
 
   // eslint-disable-next-line @typescript-eslint/no-unused-vars
   async destroy(force: boolean): Promise<void> {
-    this._logger?.info('RafikiKafkaProducer - destroy called...');
+    this._logger?.info('RhyzaKafkaProducer - destroy called...');
     return await this.disconnect();
   }
 

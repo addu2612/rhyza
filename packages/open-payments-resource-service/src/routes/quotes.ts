@@ -15,14 +15,14 @@ import { decodeCompoundId, encodeCompoundId } from '../utils.js';
 interface QuoteRouteOptions extends FastifyPluginOptions {
   palClient: PalClient;
   paymentsClient: PaymentsClient;
-  openPaymentsAuthServiceUrl: string;
+  openPaymentsUrl: string;
 }
 
 export async function quoteRoutes(
   server: FastifyInstance,
   opts: QuoteRouteOptions
 ): Promise<void> {
-  const { palClient, paymentsClient, openPaymentsAuthServiceUrl } = opts;
+  const { palClient, paymentsClient, openPaymentsUrl } = opts;
 
   server.get<{
     Params: { id: string };
@@ -33,7 +33,7 @@ export async function quoteRoutes(
     const { id } = request.params;
 
     try {
-      const { paymentIntentId, quoteId } = decodeCompoundId(id);
+      const { paymentIntentId, resourceId: quoteId } = decodeCompoundId(id);
       const quote = await paymentsClient.getQuote(paymentIntentId, quoteId);
 
       if (quote.state !== 'COMPLETED') {
@@ -66,7 +66,7 @@ export async function quoteRoutes(
 
       // build response
       const response: components['schemas']['quote'] = {
-        id: encodeCompoundId(quote.paymentIntentId, quote.id),
+        id: `${openPaymentsUrl}/quotes/${encodeCompoundId(quote.paymentIntentId, quote.id)}`,
         walletAddress: quote.senderWalletAddress,
         expiresAt: quote.expiresAt,
         debitAmount: {
@@ -83,7 +83,7 @@ export async function quoteRoutes(
         createdAt: quote.createdAt,
         receiver:
           paymentIntent.remoteUrl ??
-          `${openPaymentsAuthServiceUrl}/incoming-payments/${quote.paymentIntentId}`
+          `${openPaymentsUrl}/incoming-payments/${quote.paymentIntentId}`
       };
       return reply.status(200).send(response);
     } catch (err: unknown) {
@@ -158,24 +158,24 @@ export async function quoteRoutes(
             request.body.debitAmount.assetScale !== walletAddress.assetScale
           ) {
             throw new OpenPaymentsResourceServerRouteError(
-              404,
+              400,
               'debitAmount asset does not match wallet address asset',
               'invalid_request'
             );
           }
-          debitAmountValue = Number(request.body.debitAmount);
+          debitAmountValue = Number(request.body.debitAmount.value);
         } else if (
           'receiveAmount' in request.body &&
           request.body.receiveAmount
         ) {
-          receiveAmountValue = Number(request.body.receiveAmount);
+          receiveAmountValue = Number(request.body.receiveAmount.value);
         }
 
         const id = randomUUID();
 
         const result = await paymentsClient.createQuote(
           id,
-          { incomingPaymentUrl },
+          { paymentIntentUrl: incomingPaymentUrl },
           alias.walletAddressId,
           walletAddressUrl,
           debitAmountValue,
@@ -187,7 +187,7 @@ export async function quoteRoutes(
         );
 
         const response: components['schemas']['quote'] = {
-          id: encodeCompoundId(result.paymentIntentId, result.id),
+          id: `${openPaymentsUrl}/quotes/${encodeCompoundId(result.paymentIntentId, result.id)}`,
           walletAddress: result.senderWalletAddress,
           expiresAt: result.expiresAt,
           debitAmount: {
@@ -204,7 +204,7 @@ export async function quoteRoutes(
           createdAt: result.createdAt,
           receiver:
             paymentIntent.remoteUrl ??
-            `${openPaymentsAuthServiceUrl}/incoming-payments/${result.paymentIntentId}`
+            `${openPaymentsUrl}/incoming-payments/${result.paymentIntentId}`
         };
 
         return reply.status(201).send(response);

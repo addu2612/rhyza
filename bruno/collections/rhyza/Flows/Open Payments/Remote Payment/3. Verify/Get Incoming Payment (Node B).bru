@@ -1,0 +1,16 @@
+meta {
+  name: Get Incoming Payment (Node B)
+  type: http
+  seq: 1
+}
+
+get {
+  url: http://{{opBHost}}/incoming-payments/{{receiverIntentIdB}}
+  body: none
+  auth: none
+}
+
+docs {
+  Check `receivedAmount` vs `incomingAmount` and `completed` to verify the
+  payment landed on Node B.
+}

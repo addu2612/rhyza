@@ -48,7 +48,7 @@ import {
   DEFAULT_SORT_ORDER,
   IPaymentIntent,
   IPaymentIntentRepository,
-  ISentPayment,
+  IStoredSentPayment,
   SortOrder
 } from 'payments-domain-lib';
 import {
@@ -274,7 +274,7 @@ export class PaymentsServiceServer {
       this._storePendingResponse(commandId, call, callback);
       const receiveAmount = call.request.getReceiveAmount();
       const debitAmount = call.request.getDebitAmount();
-      const remoteUrl = call.request.getRemoteUrl();
+      const remotePaymentIntentUrl = call.request.getRemotePaymentIntentUrl();
       const cmd = new CreateQuoteCmd(
         {
           id: commandId,
@@ -283,7 +283,8 @@ export class PaymentsServiceServer {
           senderWalletAddress: call.request.getWalletAddress(),
           receiveAmount: receiveAmount ? receiveAmount : undefined,
           debitAmount: debitAmount ? debitAmount : undefined,
-          remoteUrl: remoteUrl ? remoteUrl : undefined
+          remotePaymentIntentUrl: remotePaymentIntentUrl || undefined,
+          createdAt: call.request.getCreatedAt() || undefined
         },
         commandId
       );
@@ -306,6 +307,9 @@ export class PaymentsServiceServer {
           paymentIntentId: call.request.getPaymentIntentId(),
           quoteId: call.request.getQuoteId(),
           debitAmount: call.request.getDebitAmount() || undefined,
+          remotePaymentIntentUrl:
+            call.request.getRemotePaymentIntentUrl() || undefined,
+          createdAt: call.request.getCreatedAt() || undefined,
           grantId: call.request.getGrantId() || undefined
         },
         commandId
@@ -409,11 +413,9 @@ export class PaymentsServiceServer {
         if (quote.receiveAmount != null) {
           response.setReceiveAmount(Number(quote.receiveAmount));
         }
-        if (quote.sourceAmount != null) {
-          response.setSourceAmount(Number(quote.sourceAmount));
-        }
-        if (quote.senderAssetCode) {
-          response.setSenderAssetCode(quote.senderAssetCode);
+        if (quote.route) {
+          response.setSourceAmount(Number(quote.route.sourceAmount));
+          response.setSenderAssetCode(quote.route.senderAssetCode);
         }
       } else if (quote.state === 'FAILED') {
         response.setErrorName(quote.errorName);
@@ -630,8 +632,13 @@ export class PaymentsServiceServer {
     return pbPaymentIntent;
   }
 
+  /**
+   * Projects a payment onto the wire. Takes the stored shape, which both
+   * domain variants satisfy, because this mapping needs fields rather than
+   * the local/remote distinction.
+   */
   private _toPbPayment(
-    payment: ISentPayment,
+    payment: IStoredSentPayment,
     parentIntent: { assetCode: string; assetScale: number; remoteUrl?: string }
   ): Payment {
     const pbPayment = new Payment();
@@ -648,7 +655,7 @@ export class PaymentsServiceServer {
       pbPayment.setFailReason(payment.failReason);
     }
     if (parentIntent.remoteUrl) {
-      pbPayment.setRemoteUrl(parentIntent.remoteUrl);
+      pbPayment.setRemotePaymentIntentUrl(parentIntent.remoteUrl);
     }
     if (payment.metadata) {
       pbPayment.setMetadata(JSON.stringify(payment.metadata));
@@ -669,12 +676,16 @@ export class PaymentsServiceServer {
     pbPayment.setSentAmount(sentAmount);
 
     // receiveAmount is denominated in the parent intent's (receive-side)
-    // asset — a different currency for cross-currency payments.
-    const receiveAmount = new Amount();
-    receiveAmount.setValue(Number(payment.receiveAmount));
-    receiveAmount.setAssetCode(parentIntent.assetCode);
-    receiveAmount.setAssetScale(parentIntent.assetScale);
-    pbPayment.setReceiveAmount(receiveAmount);
+    // asset — a different currency for cross-currency payments. A payment
+    // created without a quote fixes only the debit side, so it has none; the
+    // field is left unset rather than zeroed, and reads as absent on the wire.
+    if (payment.receiveAmount !== null) {
+      const receiveAmount = new Amount();
+      receiveAmount.setValue(Number(payment.receiveAmount));
+      receiveAmount.setAssetCode(parentIntent.assetCode);
+      receiveAmount.setAssetScale(parentIntent.assetScale);
+      pbPayment.setReceiveAmount(receiveAmount);
+    }
 
     return pbPayment;
   }
@@ -795,7 +806,33 @@ export class PaymentsServiceServer {
         this._toServiceError(evt.payload)
       );
     } else if (PaymentIntentDomainEvent.isPaymentCreatedEvent(evt)) {
-      const response = new CreatePaymentResponse().setId(evt.payload.id);
+      const p = evt.payload;
+      const response = new CreatePaymentResponse().setPayment(
+        this._toPbPayment(
+          {
+            id: p.id,
+            state: p.state,
+            senderWalletAddress: p.senderWalletAddress,
+            senderWalletAddressId: p.senderWalletAddressId,
+            paymentIntentId: p.paymentIntentId,
+            quoteId: p.quoteId,
+            assetCode: p.assetCode,
+            assetScale: p.assetScale,
+            createdAt: p.createdAt,
+            debitAmount: BigInt(p.debitAmount ?? 0),
+            receiveAmount:
+              p.receiveAmount === null ? null : BigInt(p.receiveAmount),
+            sentAmount: BigInt(p.sentAmount ?? 0),
+            metadata: p.metadata
+          },
+          {
+            // receiveAmount is denominated in the parent intent's asset
+            assetCode: p.receiveAssetCode,
+            assetScale: p.receiveAssetScale,
+            remoteUrl: p.paymentIntentRemoteUrl
+          }
+        )
+      );
       this._resolvePendingResponse(pending, requestId, null, response);
     } else if (PaymentIntentDomainEvent.isPaymentCreateFailedEvent(evt)) {
       this._resolvePendingResponse(

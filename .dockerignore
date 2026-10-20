@@ -24,5 +24,5 @@ benchmark.js
 bruno
 docker
 docs
-internal-docs
+dev-docs
 *.md
