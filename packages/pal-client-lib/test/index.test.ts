@@ -21,6 +21,7 @@ const testPrefix = `TEST-${randomBytes(3).toString('hex')}`;
 // const assetCode = `USD`;
 const FIXED_ASSET_CODE = 'EUR';
 const ASSET_CODE = `${testPrefix}_${FIXED_ASSET_CODE}`;
+const STORED_ASSET_CODE = ASSET_CODE.toUpperCase();
 const ASSET_SCALE = 2;
 const DEPOSIT_AMOUNT = 5000n;
 const MIN_AMOUNT = (1 * 10 ** ASSET_SCALE).toString();
@@ -36,6 +37,9 @@ const PUBLIC_NAME = 'Pedro Barreto';
 
 const FX_SOURCE_ASSET_CODE = `${testPrefix}_USD`;
 const FX_DESTINATION_ASSET_CODE = `${testPrefix}_XRP`;
+const STORED_FX_SOURCE_ASSET_CODE = FX_SOURCE_ASSET_CODE.toUpperCase();
+const STORED_FX_DESTINATION_ASSET_CODE =
+  FX_DESTINATION_ASSET_CODE.toUpperCase();
 const FX_PEER_RATE = 1.2;
 const FX_INTRAASE_RATE = 0.3;
 
@@ -58,20 +62,35 @@ after(async () => {
  * */
 
 test('pal client - create asset', async () => {
-  await client.createAsset(ASSET_CODE, ASSET_SCALE);
+  await client.createAsset(ASSET_CODE.toLowerCase(), ASSET_SCALE);
 
   // extra assets for fx tests
-  await client.createAsset(FX_SOURCE_ASSET_CODE, ASSET_SCALE);
-  await client.createAsset(FX_DESTINATION_ASSET_CODE, ASSET_SCALE);
+  await client.createAsset(FX_SOURCE_ASSET_CODE.toLowerCase(), ASSET_SCALE);
+  await client.createAsset(
+    FX_DESTINATION_ASSET_CODE.toLowerCase(),
+    ASSET_SCALE
+  );
   assert.ok(true);
 });
 
 test('pal client - created asset must exist', async () => {
-  const asset = await client.getAsset(ASSET_CODE);
+  const [asset] = await client.getAssets([ASSET_CODE.toLowerCase()]);
 
   assert.ok(asset);
-  assert.equal(asset.code, ASSET_CODE);
+  assert.equal(asset.code, STORED_ASSET_CODE);
   assert.equal(asset.scale, ASSET_SCALE);
+
+  const [sourceAsset] = await client.getAssets([
+    FX_SOURCE_ASSET_CODE.toLowerCase()
+  ]);
+  assert.ok(sourceAsset);
+  assert.equal(sourceAsset.code, STORED_FX_SOURCE_ASSET_CODE);
+
+  const [destinationAsset] = await client.getAssets([
+    FX_DESTINATION_ASSET_CODE.toLowerCase()
+  ]);
+  assert.ok(destinationAsset);
+  assert.equal(destinationAsset.code, STORED_FX_DESTINATION_ASSET_CODE);
 
   assert.ok(asset.ledgerAccountId);
   createdAssetLedgerAccountId = asset.ledgerAccountId;
@@ -86,7 +105,7 @@ test('pal client - created asset must exist and have an new ledger in the liquid
 
   assert.ok(assetAccount);
   assert.ok(assetAccount.id, createdAssetLedgerAccountId);
-  assert.equal(assetAccount.assetCode, ASSET_CODE);
+  assert.equal(assetAccount.assetCode, STORED_ASSET_CODE);
   // asset id is the code (and that's the ext id for the ledger account
   assert.equal(assetAccount.creditedAmount, '0');
   assert.equal(assetAccount.debitedAmount, '0');
@@ -105,9 +124,9 @@ test('pal client - created duplicate asset should fail', async () => {
 });
 
 test('pal client - get non existing asset should fail', async () => {
-  const asset = await client.getAsset('NON EXISTING');
+  const assets = await client.getAssets(['NON EXISTING']);
 
-  assert.ok(asset === null);
+  assert.equal(assets.length, 0);
 });
 
 /*
@@ -118,7 +137,7 @@ test('pal client - create peer', async () => {
   await client.createPeer(
     PEER_ONE_ID,
     PEER_ONE_NAME,
-    ASSET_CODE,
+    STORED_ASSET_CODE,
     ASSET_SCALE,
     PEER_ONE_ILP_STATIC_ADDRESS
   );
@@ -131,7 +150,7 @@ test('pal client - created peer must exist', async () => {
   assert.ok(peer);
   assert.equal(peer.id, PEER_ONE_ID);
   assert.equal(peer.name, PEER_ONE_NAME);
-  assert.equal(peer.assetCode, ASSET_CODE);
+  assert.equal(peer.assetCode, STORED_ASSET_CODE);
   assert.equal(peer.assetScale, ASSET_SCALE);
   assert.ok(peer.ledgerAccounts);
   assert.ok(peer.ledgerAccounts.peerLiquidityAccId);
@@ -155,7 +174,7 @@ test('pal client - get created peer by ILP Address', async () => {
   assert.ok(peer);
   assert.equal(peer.id, PEER_ONE_ID);
   assert.equal(peer.name, PEER_ONE_NAME);
-  assert.equal(peer.assetCode, ASSET_CODE);
+  assert.equal(peer.assetCode, STORED_ASSET_CODE);
   assert.equal(peer.assetScale, ASSET_SCALE);
   assert.ok(peer.ledgerAccounts);
   assert.ok(peer.ledgerAccounts.peerLiquidityAccId);
@@ -236,8 +255,12 @@ test('pal client - created peer must have an new set of ledger accounts', async 
   // we have to wait for the ledger acount to be created in the read side of the ledger
   await new Promise((resolve) => setTimeout(resolve, 10000));
   const accountIds: string[] = Object.values(peerOneDto.ledgerAccounts);
-
-  const accounts = await client.getLedgerAccounts(accountIds);
+  const deadline = Date.now() + 20_000;
+  let accounts = await client.getLedgerAccounts(accountIds);
+  while (accounts.length < accountIds.length && Date.now() < deadline) {
+    await new Promise((resolve) => setTimeout(resolve, 500));
+    accounts = await client.getLedgerAccounts(accountIds);
+  }
 
   assert.ok(accounts);
   assert.equal(accounts.length, 5);
@@ -247,7 +270,7 @@ test('pal client - created peer must have an new set of ledger accounts', async 
   );
   assert.ok(peerLiqAcc);
   assert.equal(peerLiqAcc.id, peerOneDto.ledgerAccounts.peerLiquidityAccId);
-  assert.equal(peerLiqAcc.assetCode, ASSET_CODE);
+  assert.equal(peerLiqAcc.assetCode, STORED_ASSET_CODE);
   assert.equal(peerLiqAcc.peerId, PEER_ONE_ID);
   assert.equal(peerLiqAcc.creditedAmount, '0');
   assert.equal(peerLiqAcc.debitedAmount, '0');
@@ -257,7 +280,7 @@ test('pal client - created peer must have an new set of ledger accounts', async 
   );
   assert.ok(peerCleAcc);
   assert.equal(peerCleAcc.id, peerOneDto.ledgerAccounts.peerClearingAccId);
-  assert.equal(peerCleAcc.assetCode, ASSET_CODE);
+  assert.equal(peerCleAcc.assetCode, STORED_ASSET_CODE);
   assert.equal(peerCleAcc.peerId, PEER_ONE_ID);
   assert.equal(peerCleAcc.creditedAmount, '0');
   assert.equal(peerCleAcc.debitedAmount, '0');
@@ -267,7 +290,7 @@ test('pal client - created peer must have an new set of ledger accounts', async 
   );
   assert.ok(aseLiqAcc);
   assert.equal(aseLiqAcc.id, peerOneDto.ledgerAccounts.aseLiquidityAccId);
-  assert.equal(aseLiqAcc.assetCode, ASSET_CODE);
+  assert.equal(aseLiqAcc.assetCode, STORED_ASSET_CODE);
   assert.equal(aseLiqAcc.peerId, PEER_ONE_ID);
   assert.equal(aseLiqAcc.creditedAmount, '0');
   assert.equal(aseLiqAcc.debitedAmount, '0');
@@ -277,7 +300,7 @@ test('pal client - created peer must have an new set of ledger accounts', async 
   );
   assert.ok(aseCleAcc);
   assert.equal(aseCleAcc.id, peerOneDto.ledgerAccounts.aseClearingAccId);
-  assert.equal(aseCleAcc.assetCode, ASSET_CODE);
+  assert.equal(aseCleAcc.assetCode, STORED_ASSET_CODE);
   assert.equal(aseCleAcc.peerId, PEER_ONE_ID);
   assert.equal(aseCleAcc.creditedAmount, '0');
   assert.equal(aseCleAcc.debitedAmount, '0');
@@ -287,7 +310,7 @@ test('pal client - created peer must have an new set of ledger accounts', async 
   );
   assert.ok(suspenseAcc);
   assert.equal(suspenseAcc.id, peerOneDto.ledgerAccounts.suspenseAccId);
-  assert.equal(suspenseAcc.assetCode, ASSET_CODE);
+  assert.equal(suspenseAcc.assetCode, STORED_ASSET_CODE);
   assert.equal(suspenseAcc.peerId, PEER_ONE_ID);
   assert.equal(suspenseAcc.creditedAmount, '0');
   assert.equal(suspenseAcc.debitedAmount, '0');
@@ -301,7 +324,7 @@ test('pal client - LiquidityManagement - Deposit to ASE', async () => {
   const reqId = 'req1';
   const resp = await client.ledgerDepositToAse({
     peerId: PEER_ONE_ID,
-    assetCode: ASSET_CODE,
+    assetCode: STORED_ASSET_CODE,
     amount: DEPOSIT_AMOUNT.toString(),
     amountScale: ASSET_SCALE,
     requestId: reqId
@@ -319,7 +342,7 @@ test('pal client - LiquidityManagement - Withdraw from ASE', async () => {
   const reqId = 'req3';
   const resp = await client.ledgerWithdrawFromAse({
     peerId: PEER_ONE_ID,
-    assetCode: ASSET_CODE,
+    assetCode: STORED_ASSET_CODE,
     amount: DEPOSIT_AMOUNT.toString(),
     amountScale: ASSET_SCALE,
     requestId: reqId
@@ -338,7 +361,7 @@ test('pal client - LiquidityManagement - Withdraw excess liquidity from ASE shou
     const reqId = 'req4';
     await client.ledgerWithdrawFromAse({
       peerId: PEER_ONE_ID,
-      assetCode: ASSET_CODE,
+      assetCode: STORED_ASSET_CODE,
       amount: MIN_AMOUNT,
       amountScale: ASSET_SCALE,
       requestId: reqId
@@ -353,7 +376,7 @@ test('pal client - LiquidityManagement - Deposit to Peer', async () => {
   const reqId = 'req2';
   const resp = await client.ledgerDepositToPeer({
     peerId: PEER_ONE_ID,
-    assetCode: ASSET_CODE,
+    assetCode: STORED_ASSET_CODE,
     amount: DEPOSIT_AMOUNT.toString(),
     amountScale: ASSET_SCALE,
     requestId: reqId
@@ -371,7 +394,7 @@ test('pal client - LiquidityManagement - Withdraw from Peer', async () => {
   const reqId = 'req4';
   const resp = await client.ledgerWithdrawFromPeer({
     peerId: PEER_ONE_ID,
-    assetCode: ASSET_CODE,
+    assetCode: STORED_ASSET_CODE,
     amount: DEPOSIT_AMOUNT.toString(),
     amountScale: ASSET_SCALE,
     requestId: reqId
@@ -390,7 +413,7 @@ test('pal client - LiquidityManagement - Withdraw excess liquidity from Peer sho
     const reqId = 'req4';
     await client.ledgerWithdrawFromPeer({
       peerId: PEER_ONE_ID,
-      assetCode: ASSET_CODE,
+      assetCode: STORED_ASSET_CODE,
       amount: MIN_AMOUNT,
       amountScale: ASSET_SCALE,
       requestId: reqId
@@ -409,7 +432,7 @@ test('pal client - LiquidityManagement - Deposit to ASE', async () => {
   const reqId = 'req1';
   const resp = await client.ledgerDepositToAse({
     peerId: PEER_ONE_ID,
-    assetCode: ASSET_CODE,
+    assetCode: STORED_ASSET_CODE,
     amount: DEPOSIT_AMOUNT.toString(),
     amountScale: ASSET_SCALE,
     requestId: reqId
@@ -427,7 +450,7 @@ test('pal client - LiquidityManagement - Withdraw from ASE', async () => {
   const reqId = 'req3';
   const resp = await client.ledgerWithdrawFromAse({
     peerId: PEER_ONE_ID,
-    assetCode: ASSET_CODE,
+    assetCode: STORED_ASSET_CODE,
     amount: DEPOSIT_AMOUNT.toString(),
     amountScale: ASSET_SCALE,
     requestId: reqId
@@ -446,7 +469,7 @@ test('pal client - LiquidityManagement - Withdraw excess liquidity from ASE shou
     const reqId = 'req4';
     await client.ledgerWithdrawFromAse({
       peerId: PEER_ONE_ID,
-      assetCode: ASSET_CODE,
+      assetCode: STORED_ASSET_CODE,
       amount: MIN_AMOUNT,
       amountScale: ASSET_SCALE,
       requestId: reqId
@@ -461,7 +484,7 @@ test('pal client - LiquidityManagement - Deposit to Peer', async () => {
   const reqId = 'req2';
   const resp = await client.ledgerDepositToPeer({
     peerId: PEER_ONE_ID,
-    assetCode: ASSET_CODE,
+    assetCode: STORED_ASSET_CODE,
     amount: DEPOSIT_AMOUNT.toString(),
     amountScale: ASSET_SCALE,
     requestId: reqId
@@ -479,7 +502,7 @@ test('pal client - LiquidityManagement - Withdraw from Peer', async () => {
   const reqId = 'req4';
   const resp = await client.ledgerWithdrawFromPeer({
     peerId: PEER_ONE_ID,
-    assetCode: ASSET_CODE,
+    assetCode: STORED_ASSET_CODE,
     amount: DEPOSIT_AMOUNT.toString(),
     amountScale: ASSET_SCALE,
     requestId: reqId
@@ -498,7 +521,7 @@ test('pal client - LiquidityManagement - Withdraw excess liquidity from Peer sho
     const reqId = 'req4';
     await client.ledgerWithdrawFromPeer({
       peerId: PEER_ONE_ID,
-      assetCode: ASSET_CODE,
+      assetCode: STORED_ASSET_CODE,
       amount: MIN_AMOUNT,
       amountScale: ASSET_SCALE,
       requestId: reqId
@@ -514,8 +537,8 @@ test('pal client - LiquidityManagement - Withdraw excess liquidity from Peer sho
  * */
 test('pal client - set fx intra ASE rates from ase', async () => {
   await client.setFxRate(
-    FX_SOURCE_ASSET_CODE,
-    FX_DESTINATION_ASSET_CODE,
+    STORED_FX_SOURCE_ASSET_CODE,
+    STORED_FX_DESTINATION_ASSET_CODE,
     FX_INTRAASE_RATE,
     null,
     null
@@ -524,8 +547,8 @@ test('pal client - set fx intra ASE rates from ase', async () => {
 
 test('pal client - get fx intra ASE rates from ase', async () => {
   const request: IGetIntraAseFxRate = {
-    sourceAssetCode: FX_SOURCE_ASSET_CODE,
-    destinationAssetCode: FX_DESTINATION_ASSET_CODE
+    sourceAssetCode: STORED_FX_SOURCE_ASSET_CODE,
+    destinationAssetCode: STORED_FX_DESTINATION_ASSET_CODE
   };
 
   const resp = await client.getFxRate(request);
@@ -536,16 +559,16 @@ test('pal client - get fx intra ASE rates from ase', async () => {
 
 test('pal client - set fx peer rates from ase', async () => {
   await client.setFxRate(
-    ASSET_CODE,
-    FX_DESTINATION_ASSET_CODE,
+    STORED_ASSET_CODE,
+    STORED_FX_DESTINATION_ASSET_CODE,
     FX_PEER_RATE,
     PEER_ONE_ID,
     null
   );
 
   await client.setFxRate(
-    FX_SOURCE_ASSET_CODE,
-    ASSET_CODE,
+    STORED_FX_SOURCE_ASSET_CODE,
+    STORED_ASSET_CODE,
     FX_PEER_RATE,
     PEER_ONE_ID,
     null
@@ -555,7 +578,7 @@ test('pal client - set fx peer rates from ase', async () => {
 test('pal client - get fx peer - peer asset to destination asset', async () => {
   const request: IGetPeerFxRateToDestinationAsset = {
     peerId: PEER_ONE_ID,
-    destinationAssetCode: FX_DESTINATION_ASSET_CODE
+    destinationAssetCode: STORED_FX_DESTINATION_ASSET_CODE
   };
 
   const resp = await client.getFxRate(request);
@@ -567,7 +590,7 @@ test('pal client - get fx peer - peer asset to destination asset', async () => {
 test('pal client - get fx peer - source asset to peer asset', async () => {
   const request: IGetPeerFxRateFromSourceAsset = {
     peerId: PEER_ONE_ID,
-    sourceAssetCode: FX_SOURCE_ASSET_CODE
+    sourceAssetCode: STORED_FX_SOURCE_ASSET_CODE
   };
 
   const resp = await client.getFxRate(request);
@@ -580,7 +603,7 @@ test('pal client - set fx peer with inexistent source asset should fail', async 
   try {
     await client.setFxRate(
       'NON_EXISTING_ASSET_CODE',
-      ASSET_CODE,
+      STORED_ASSET_CODE,
       FX_PEER_RATE,
       PEER_ONE_ID,
       null
@@ -594,7 +617,7 @@ test('pal client - set fx peer with inexistent source asset should fail', async 
 test('pal client - set fx peer with inexistent destiantion asset should fail', async () => {
   try {
     await client.setFxRate(
-      ASSET_CODE,
+      STORED_ASSET_CODE,
       'NON_EXISTING_ASSET_CODE',
       FX_PEER_RATE,
       PEER_ONE_ID,
@@ -609,8 +632,8 @@ test('pal client - set fx peer with inexistent destiantion asset should fail', a
 test('pal client - set fx peer with inexistent peer should fail', async () => {
   try {
     await client.setFxRate(
-      FX_SOURCE_ASSET_CODE,
-      FX_DESTINATION_ASSET_CODE,
+      STORED_FX_SOURCE_ASSET_CODE,
+      STORED_FX_DESTINATION_ASSET_CODE,
       FX_PEER_RATE,
       'NON_EXISTING_PEER',
       null
@@ -630,7 +653,7 @@ test('pal client - create wallet address', async () => {
     ALIAS_DOMAIN,
     ALIAS_PATHNAME,
     PUBLIC_NAME,
-    ASSET_CODE
+    STORED_ASSET_CODE
   );
 
   assert.ok(createdWallet);
@@ -638,7 +661,7 @@ test('pal client - create wallet address', async () => {
   assert.equal(createdWallet.domain, ALIAS_DOMAIN);
   assert.equal(createdWallet.pathName, ALIAS_PATHNAME);
   assert.equal(createdWallet.publicName, PUBLIC_NAME);
-  assert.equal(createdWallet.assetCode, ASSET_CODE);
+  assert.equal(createdWallet.assetCode, STORED_ASSET_CODE);
   assert.equal(createdWallet.assetScale, ASSET_SCALE);
   assert.equal(createdWallet.isActive, true);
 
@@ -669,7 +692,7 @@ test('pal client - get wallet', async () => {
   assert.equal(walletAddress.length, 1);
   assert.equal(walletAddress[0].id, createdWalletAddressId);
   assert.equal(walletAddress[0].publicName, PUBLIC_NAME);
-  assert.equal(walletAddress[0].assetCode, ASSET_CODE);
+  assert.equal(walletAddress[0].assetCode, STORED_ASSET_CODE);
   assert.equal(walletAddress[0].assetScale, ASSET_SCALE);
   assert.equal(walletAddress[0].isActive, true);
 });
@@ -680,7 +703,7 @@ test('pal client - created duplicate wallet should fail', async () => {
       ALIAS_DOMAIN,
       ALIAS_PATHNAME,
       PUBLIC_NAME,
-      ASSET_CODE
+      STORED_ASSET_CODE
     );
 
     assert.fail();

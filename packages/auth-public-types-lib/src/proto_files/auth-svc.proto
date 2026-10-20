@@ -1,7 +1,7 @@
 syntax = "proto3";
-package rafiki.auth.service;
+package rhyza.auth.service;
 
-service RafikiAuth {
+service RhyzaAuth {
 	// Grant RPCs
 	rpc CreateGrant(GrantRequest) returns (CreateGrantResponse) {}
 	rpc GetGrant(GetGrantRequest) returns (Grant) {}

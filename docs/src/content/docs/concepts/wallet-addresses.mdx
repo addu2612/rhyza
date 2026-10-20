@@ -4,27 +4,23 @@ next: Integration overview
 tableOfContents: false
 ---
 
-A wallet address is a secure, unique URL of a payment account that supports Open Payments. It acts as an entry point to the Open Payments resource server, facilitating interactions like sending and receiving payments.
+import { LinkOut } from '@interledger/docs-design-system'
 
-Determine whether a URL is a wallet address by sending a `GET` request to the URL with an `accept: application/json` header.
+A wallet address is a secure, unique URL of a payment account that supports Open Payments.
 
-```http title="Example request"
-curl --request GET \
- --url https://wallet.example.com/alice \
- --header 'accept: application/json'
+```bash title="Example"
+https://wallet.example.com/alice
 ```
 
-A valid response means the URL is a wallet address.
+The address acts as an entry point to the Open Payments resource server, facilitating interactions with clients. For example, to send and receive payments.
 
-```http title="Example response"
-{
-  "id": "https://wallet.example.com/alice",
-  "publicName": "Alice",
-  "assetCode": "USD",
-  "assetScale": 2,
-  "authServer": "https://auth.wallet.example.com",
-  "resourceServer": "https://wallet.example.com",
-}
-```
+Financial service providers (FSPs) are responsible for:
 
-Rhyza assigns each customer account a wallet address on behalf of the financial service provider. See the integration requirements for [wallet addresses](/integration/checklist#wallet-addresses) for more information.
+- Setting a base wallet address
+- Establishing a wallet address structure/naming convention
+  :::note
+  Consider whether the chosen structure could disclose personal data.
+  :::
+- Creating wallet addresses for each of their customers' payment accounts
+
+Details are supplied in the [Integration guide](/integration#wallet-addresses). Supplemental information is available on the <LinkOut href="https://openpayments.dev/implement/wallet-address-architecture/">Open Payments site</LinkOut>.

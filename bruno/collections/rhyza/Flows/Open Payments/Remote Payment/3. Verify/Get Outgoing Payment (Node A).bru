@@ -1,0 +1,19 @@
+meta {
+  name: Get Outgoing Payment (Node A)
+  type: http
+  seq: 2
+}
+
+get {
+  url: http://{{opAHost}}/outgoing-payments/{{outgoingPaymentIdSegment}}
+  body: none
+  auth: none
+}
+
+docs {
+  Reads the sender's own resource over Open Payments. Check `sentAmount`
+  against `debitAmount`, and `failed`.
+
+  The URL is rebuilt from the id's last segment because the server advertises
+  its Docker service name, which Bruno cannot resolve from the host.
+}

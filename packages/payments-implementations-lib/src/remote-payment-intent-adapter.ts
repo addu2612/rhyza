@@ -11,9 +11,7 @@ import {
 // incoming payment endpoint (e.g., excluding only receiver wallet address).
 // Ideally we shouldn't need to make an authenticated request for this.
 export class RemotePaymentIntentAdapter implements IRemotePaymentIntentService {
-  async fetchIncomingPayment(
-    url: string
-  ): Promise<IRemotePaymentIntentDetails> {
+  async fetchPaymentIntent(url: string): Promise<IRemotePaymentIntentDetails> {
     const response = await fetch(url, {
       headers: { Accept: 'application/json' }
     });

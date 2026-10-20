@@ -1,0 +1,24 @@
+meta {
+  name: Node B - Create Asset
+  type: http
+  seq: 5
+}
+
+post {
+  url: http://{{adminB}}/assets
+  body: json
+  auth: none
+}
+
+body:json {
+  {
+    "code": "USD",
+    "scale": 2
+  }
+}
+
+tests {
+  test("created or already exists", function () {
+    expect([201, 409]).to.include(res.getStatus());
+  });
+}

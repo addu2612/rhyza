@@ -29,7 +29,7 @@ const APP_NAME = `${BC_NAME}_LEDGER_LOAD_TEST`;
 const APP_VERSION = '0.0.1';
 const INSTANCE_ID = `${APP_NAME}_${crypto.randomUUID()}`;
 
-const TITLE = 'Rafiki V2 PAL Ledger Benchmarks';
+const TITLE = 'Rhyza PAL Ledger Benchmarks';
 const MENU_ITEMS = ['Settings', 'Liquidity Management', 'Load Test', 'Quit'];
 
 const TRANSACTION_COUNT = process.env['TRANSACTION_COUNT']

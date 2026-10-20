@@ -1,0 +1,31 @@
+meta {
+  name: Create Outgoing Payment (Node A)
+  type: http
+  seq: 3
+}
+
+post {
+  url: http://{{opAHost}}/outgoing-payments
+  body: json
+  auth: none
+}
+
+body:json {
+  {
+    "walletAddress": "https://test.com/sender",
+    "quoteId": "{{quoteId}}"
+  }
+}
+
+script:post-response {
+  const body = res.getBody();
+  if (body?.id) {
+    bru.setVar("outgoingPaymentId", body.id);
+    bru.setVar("outgoingPaymentIdSegment", body.id.split("/").pop());
+  }
+}
+
+docs {
+  The from-quote form. `quoteId` is the quote's own id, used verbatim — it is
+  a resource URL, which is what this input's `format: uri` requires.
+}

@@ -2,7 +2,12 @@
 
 import { FastifyInstance, FastifyPluginOptions } from 'fastify';
 import { PalClient } from 'pal-client-lib';
-import { AssetCreate } from 'admin-client-lib';
+import {
+  AssetCreate,
+  AssetCreateResponse,
+  AssetsResponse,
+  ErrorResponse
+} from 'admin-client-lib';
 
 interface AssetRouteOptions extends FastifyPluginOptions {
   palClient: PalClient;
@@ -16,6 +21,7 @@ export async function assetRoutes(
 
   server.post<{
     Body: AssetCreate;
+    Reply: AssetCreateResponse | ErrorResponse;
   }>('/assets', async (request, reply) => {
     const { code, scale } = request.body;
 
@@ -35,5 +41,15 @@ export async function assetRoutes(
     }
 
     return reply.status(201).send({ code });
+  });
+
+  server.get<{
+    Reply: AssetsResponse;
+  }>('/assets', async (_request, reply) => {
+    const assets = (await palClient.getAssets([])).map(({ code, scale }) => ({
+      code,
+      scale
+    }));
+    return reply.status(200).send({ assets });
   });
 }

@@ -11,7 +11,7 @@
   },
   "keywords": [],
   "author": "",
-  "license": "ISC",
+  "license": "Apache-2.0",
   "dependencies": {
     "@fastify/cookie": "^11.1.2",
     "@fastify/session": "^11.1.2",

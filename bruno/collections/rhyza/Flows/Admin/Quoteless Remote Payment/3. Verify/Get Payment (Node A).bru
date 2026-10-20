@@ -1,0 +1,19 @@
+meta {
+  name: Get Payment (Node A)
+  type: http
+  seq: 1
+}
+
+get {
+  url: http://{{adminA}}/payment-intents/{{quotelessPaymentIntentId}}/payments/{{paymentId}}
+  body: none
+  auth: none
+}
+
+docs {
+  Reads the outgoing payment on Node A. Check `state` — FAILED (e.g. before
+  funding liquidity) vs COMPLETED once settlement works. `receiveAmount` is
+  null for a quoteless payment: no quote ever fixed a delivery amount. Uses
+  the ids saved by Flow: quotelessPaymentIntentId and paymentId (from Create
+  Payment).
+}

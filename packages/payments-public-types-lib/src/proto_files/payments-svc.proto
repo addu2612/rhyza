@@ -1,5 +1,5 @@
 syntax = "proto3";
-package rafiki.payments.service;
+package rhyza.payments.service;
 
 // Service for managing payment resources.
 service PaymentsGrpc {
@@ -62,6 +62,7 @@ message PaymentIntent {
   optional string destination_ilp_address = 10;
   string created_at = 11;
   optional string remote_url = 12;
+  optional string metadata = 13;
 }
 
 // A payment resource (Open Payments outgoing payment).
@@ -77,8 +78,9 @@ message Payment {
   Amount sent_amount = 9;
   string created_at = 10;
   // Parent intent's remoteUrl (set for REMOTE intents) — the receiver resource URL.
-  optional string remote_url = 11;
+  optional string remote_payment_intent_url = 11;
   optional string fail_reason = 12;
+  optional string metadata = 13;
 }
 
 /*
@@ -140,7 +142,8 @@ message CreateQuoteRequest {
   string payment_intent_id = 4;
   optional uint64 debit_amount = 5;
   optional uint64 receive_amount = 6;
-  optional string remote_url = 7;
+  optional string remote_payment_intent_url = 7;
+  optional string created_at = 8;
 }
 
 // Response containing the created quote details.
@@ -168,12 +171,15 @@ message CreatePaymentRequest {
   string payment_intent_id = 4;
   optional string quote_id = 5;
   optional uint64 debit_amount = 6;
-  optional string grant_id = 7;
+  optional string remote_payment_intent_url = 7;
+  optional string grant_id = 8;
+  optional string metadata = 9;
+  optional string created_at = 10;
 }
 
 // Response containing the ID of the created payment.
 message CreatePaymentResponse {
-  string id = 1;
+  Payment payment = 1;
 }
 
 // Request to approve a payment.

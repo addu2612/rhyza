@@ -1,7 +1,7 @@
 import * as grpc from '@grpc/grpc-js';
 import { ServiceError } from '@grpc/grpc-js';
 import {
-  RafikiAuthClient,
+  RhyzaAuthClient,
   GrantRequest as PbGrantRequest,
   Grant as PbGrant,
   GetGrantRequest as PbGetGrantRequest,
@@ -55,13 +55,13 @@ import { AuthClientUnknownError, clientErrorFromGrpcError } from './errors';
 export class AuthClient {
   private readonly _serverUrl: string;
   private readonly _grpcConnectTimeOutMs: number;
-  private readonly _grpcClient: RafikiAuthClient;
+  private readonly _grpcClient: RhyzaAuthClient;
 
   constructor(serverUrl: string, grpcConnectTimeOutMs: number = 5_000) {
     this._serverUrl = serverUrl;
     this._grpcConnectTimeOutMs = grpcConnectTimeOutMs;
 
-    this._grpcClient = new RafikiAuthClient(
+    this._grpcClient = new RhyzaAuthClient(
       this._serverUrl,
       grpc.credentials.createInsecure(),
       {

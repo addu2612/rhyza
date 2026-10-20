@@ -1,0 +1,47 @@
+meta {
+  name: Node A - Create Peer for B
+  type: http
+  seq: 3
+}
+
+post {
+  url: http://{{adminA}}/peers
+  body: json
+  auth: none
+}
+
+body:json {
+  {
+    "id": "04978037-26b8-4b4d-854a-278ed7548959",
+    "name": "Node B",
+    "assetCode": "USD",
+    "assetScale": 2,
+    "ilpStaticAddress": "private.rhyza.b",
+    "http": {
+      "outgoing": {
+        "endpoint": "http://ilp-connector-service-b:4000/ilp",
+        "authToken": "local-peer-token"
+      },
+      "incoming": {
+        "authToken": "local-peer-token"
+      }
+    }
+  }
+}
+
+vars:pre-request {
+  adminA: localhost:3001
+}
+
+script:post-response {
+  const body = res.getBody();
+  if (body?.id) {
+    bru.setVar("peerId", body.id);
+  }
+}
+
+tests {
+  test("created or already exists", function () {
+    expect([201, 409]).to.include(res.getStatus());
+  });
+}

@@ -1,0 +1,39 @@
+meta {
+  name: Create Outgoing Payment (Node A)
+  type: http
+  seq: 2
+}
+
+post {
+  url: http://{{opAHost}}/outgoing-payments
+  body: json
+  auth: none
+}
+
+body:json {
+  {
+    "walletAddress": "https://test.com/sender",
+    "incomingPayment": "{{receiverIntentUrl}}",
+    "debitAmount": {
+      "assetCode": "USD",
+      "assetScale": 2,
+      "value": "1000"
+    }
+  }
+}
+
+script:post-response {
+  const body = res.getBody();
+  if (body?.id) {
+    bru.setVar("outgoingPaymentId", body.id);
+    bru.setVar("outgoingPaymentIdSegment", body.id.split("/").pop());
+  }
+}
+
+docs {
+  No quote step: the client sends the receiver's incoming payment URL and a
+  `debitAmount`. Quoteless from the client's point of view only — Open
+  Payments requires a `receiveAmount` on the created resource, so the server
+  creates a quote under the hood to resolve it — visible on the response as
+  `quoteId`. Resolving it at creation is the whole reason this route exists.
+}

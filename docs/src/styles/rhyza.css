@@ -22,7 +22,7 @@
 }
 
 /* Temporary style to fix spacing before external link icon */
-.icon:where(.astro-abnnfd7w) {
+.icon {
   margin-left: 3px !important;
 }
 

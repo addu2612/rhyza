@@ -8,13 +8,13 @@ import {
   CancelPaymentRequest,
   GetPaymentRequest,
   PaymentCancel,
-  PaymentCreate,
+  CreatePaymentRequest,
   PaymentsListPaymentsRequest
 } from 'admin-client-lib';
 import {
   IAmount,
   PaymentsClient,
-  GetPaymentResult,
+  IPayment,
   httpStatusFromGrpcError,
   toClientApiErrorResponse
 } from 'payments-client-lib';
@@ -38,10 +38,12 @@ interface PaymentBody {
   senderWalletAddress: string;
   quoteId?: string;
   debitAmount: AmountBody;
-  receiveAmount: AmountBody;
+  /** Null for a payment created without a quote, which fixes only the debit side. */
+  receiveAmount: AmountBody | null;
   sentAmount: AmountBody;
   createdAt: string;
   failReason?: string;
+  metadata?: Record<string, unknown>;
 }
 
 function toAmountBody(amount: IAmount): AmountBody {
@@ -52,14 +54,17 @@ function toAmountBody(amount: IAmount): AmountBody {
   };
 }
 
-function toPaymentBody(payment: GetPaymentResult): PaymentBody {
+function toPaymentBody(payment: IPayment): PaymentBody {
   const body: PaymentBody = {
     id: payment.id,
     state: payment.state,
     paymentIntentId: payment.paymentIntentId,
     senderWalletAddress: payment.senderWalletAddress,
     debitAmount: toAmountBody(payment.debitAmount),
-    receiveAmount: toAmountBody(payment.receiveAmount),
+    receiveAmount:
+      payment.receiveAmount === null
+        ? null
+        : toAmountBody(payment.receiveAmount),
     sentAmount: toAmountBody(payment.sentAmount),
     createdAt: payment.createdAt
   };
@@ -72,6 +77,10 @@ function toPaymentBody(payment: GetPaymentResult): PaymentBody {
     body.failReason = payment.failReason;
   }
 
+  if (payment.metadata) {
+    body.metadata = payment.metadata;
+  }
+
   return body;
 }
 
@@ -82,10 +91,13 @@ export async function paymentRoutes(
   const { palClient, paymentsClient } = opts;
 
   server.post<{
-    Body: PaymentCreate;
+    Body: CreatePaymentRequest;
   }>('/payments', async (request, reply) => {
-    const { walletAddress, paymentIntentId, quoteId, debitAmount } =
-      request.body;
+    const { walletAddress, quoteId, debitAmount, metadata } = request.body;
+    const paymentIntent =
+      'paymentIntentUrl' in request.body
+        ? { paymentIntentUrl: request.body.paymentIntentUrl }
+        : { paymentIntentId: request.body.paymentIntentId };
 
     const id = request.body.id ?? randomUUID();
 
@@ -100,14 +112,19 @@ export async function paymentRoutes(
     try {
       const result = await paymentsClient.createPayment(
         id,
+        paymentIntent,
         alias.walletAddressId,
         walletAddress,
-        paymentIntentId,
         quoteId,
-        debitAmount ? Number(debitAmount) : undefined
+        debitAmount ? Number(debitAmount) : undefined,
+        undefined, // createdAt
+        undefined, // grantId
+        metadata
       );
 
-      return reply.status(201).send({ id: result.id, paymentIntentId });
+      return reply
+        .status(201)
+        .send({ id: result.id, paymentIntentId: result.paymentIntentId });
     } catch (err) {
       server.log.error(err);
       const httpStatus = httpStatusFromGrpcError(err);

@@ -1,0 +1,11 @@
+meta {
+  name: Get Outgoing Payment
+  type: http
+  seq: 12
+}
+
+get {
+  url: http://{{openPaymentsResourceServerUrl}}/outgoing-payments/{{outgoingPaymentIdSegment}}
+  body: none
+  auth: none
+}

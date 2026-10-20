@@ -1,0 +1,41 @@
+meta {
+  name: Create Incoming Payment (Node B)
+  type: http
+  seq: 1
+}
+
+post {
+  url: http://{{opBHost}}/incoming-payments
+  body: json
+  auth: none
+}
+
+body:json {
+  {
+    "walletAddress": "https://test.com/receiver",
+    "incomingAmount": {
+      "assetCode": "USD",
+      "assetScale": 2,
+      "value": "1000"
+    }
+  }
+}
+
+script:post-response {
+  const body = res.getBody();
+  if (body?.id) {
+    // The id is the resource URL, and it is Node B's own advertised address —
+    // which is exactly what Node A needs to quote against.
+    bru.setVar("receiverIntentUrl", body.id);
+    bru.setVar("receiverIntentIdB", body.id.split("/").pop());
+  }
+}
+
+docs {
+  The receiver's resource, created through Node B's Open Payments server
+  rather than its Admin API — this is the only surface a counterparty has.
+
+  The 201 carries the whole resource, so `receiverIntentUrl` is taken straight
+  from `id`; Bruno only splits the last segment off for its own GET, which has
+  to go via localhost.
+}

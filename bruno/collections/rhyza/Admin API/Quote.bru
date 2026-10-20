@@ -1,0 +1,30 @@
+meta {
+  name: Quote
+  type: http
+<<<<<<< HEAD:bruno/collections/rafiki-v2/Admin API/Quote.bru
+  seq: 6
+=======
+  seq: 7
+>>>>>>> main:bruno/collections/rhyza/Admin API/Quote.bru
+}
+
+post {
+  url: http://{{adminApiUrl}}/quotes
+  body: json
+  auth: none
+}
+
+body:json {
+  {
+    "walletAddress": "https://test.com/sender",
+    "paymentIntentId": "{{paymentIntentId}}"
+  }
+}
+
+script:post-response {
+  const body = res.getBody();
+  
+  if (body?.id) {
+    bru.setVar("quoteId", body.id);
+  }
+}

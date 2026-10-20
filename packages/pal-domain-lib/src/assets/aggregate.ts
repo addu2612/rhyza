@@ -29,9 +29,9 @@ export class AssetAggregate {
   }
 
   async createAsset(code: string, scale: number): Promise<void> {
-    const existing = await this._repo.fetch(code);
+    const existing = await this._repo.fetch([code.toUpperCase()]);
 
-    if (existing) {
+    if (existing.length > 0) {
       this._logger.warn(`Asset with code: ${code} already exists`);
       throw new CannotCreateDuplicateAssetError(
         'Asset with code: ' + code + ' already exists'
@@ -44,35 +44,35 @@ export class AssetAggregate {
 
     await this._repo.store(newAsset.toDto());
     this._uncommittedDomainEvents.push(
-      new AssetCreatedEvent({ assetCode: code })
+      new AssetCreatedEvent({ assetCode: newAsset.code })
     );
-    this._logger.debug(`Asset with code: ${code} created`);
+    this._logger.debug(`Asset with code: ${newAsset.code} created`);
   }
 
   async associateLedgerAccountAndActivate(
     assetCode: string,
     ledgerAccountId: string
   ): Promise<void> {
-    const found = await this._repo.fetch(assetCode);
-    if (!found) {
+    const found = await this._repo.fetch([assetCode.toUpperCase()]);
+    if (found.length === 0) {
       throw new AssetNotFoundError(
         `Asset with code ${assetCode} does not exist`
       );
     }
-    const asset = PalAsset.fromDto(found);
+    const asset = PalAsset.fromDto(found[0]);
     asset.associateLedgerAccount(ledgerAccountId);
     await this._repo.store(asset.toDto());
 
     this._uncommittedDomainEvents.push(
-      new AssetActivatedEvent({ assetCode: assetCode })
+      new AssetActivatedEvent({ assetCode: asset.code })
     );
   }
 
-  async getAsset(code: string): Promise<IPalAssetDto | null> {
-    const found = await this._repo.fetch(code);
-
-    if (!found) return null;
-
-    return found;
+  async getAssets(codes?: string[]): Promise<IPalAssetDto[]> {
+    const assetCodes =
+      codes && codes.length > 0
+        ? codes.map((code) => code.toUpperCase())
+        : codes;
+    return await this._repo.fetch(assetCodes);
   }
 }

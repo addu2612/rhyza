@@ -104,9 +104,10 @@ test('PAL Asset Domain - create asset', async () => {
 });
 
 test('PAL Asset Domain - get asset', async () => {
-  const asset = await assetAggregate.getAsset(ASSET_CODE);
+  const assets = await assetAggregate.getAssets([ASSET_CODE]);
 
-  assert.ok(asset);
+  assert.ok(assets.length);
+  const asset = assets[0];
   assert.equal(asset.code, ASSET_CODE);
   assert.equal(asset.scale, ASSET_SCALE);
 });
@@ -122,10 +123,16 @@ test('PAL Asset Domain - created duplicate asset should fail', async () => {
   }
 });
 
-test('PAL Asset Domain - get non existing asset should fail', async () => {
-  const asset = await assetAggregate.getAsset('NON EXISTING');
+test('PAL Asset Domain - get assets without codes returns all assets', async () => {
+  const assets = await assetAggregate.getAssets();
 
-  assert.ok(asset === null);
+  assert.ok(assets.some((asset) => asset.code === ASSET_CODE));
+});
+
+test('PAL Asset Domain - get non existing asset should fail', async () => {
+  const assets = await assetAggregate.getAssets(['NON EXISTING']);
+
+  assert.ok(assets.length === 0);
 });
 //endregion assets
 

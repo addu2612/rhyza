@@ -1,0 +1,31 @@
+meta {
+  name: Node A - Fund Sender Liquidity
+  type: http
+  seq: 4
+}
+
+post {
+  url: http://{{adminA}}/liquidity/deposit
+  body: json
+  auth: none
+}
+
+body:json {
+  {
+    "assetCode": "USD",
+    "peerId": "04978037-26b8-4b4d-854a-278ed7548959",
+    "amount": 100000
+  }
+}
+
+tests {
+  test("accepted", function () {
+    expect([200, 202]).to.include(res.getStatus());
+  });
+}
+
+docs {
+  Funds Node A so it can send: debits the USD asset system account and credits
+  the peer's ASE liquidity account (peerId = Node A's peer-for-B). Without this,
+  the outgoing payment fails the reserve step with "Insufficient funds".
+}

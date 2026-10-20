@@ -183,6 +183,7 @@ export type PaymentIntentCreatedPayload = {
   destination: string;
   assetCode: string;
   assetScale: number;
+  metadata?: Record<string, unknown>;
 };
 
 export class PaymentIntentCreatedEvent extends PaymentIntentDomainEvent {
@@ -223,6 +224,7 @@ export type PaymentIntentCompletedPayload = {
   destinationIlpAddress?: string;
   assetCode: string;
   assetScale: number;
+  metadata?: Record<string, unknown>;
 };
 
 export class PaymentIntentCompletedEvent extends PaymentIntentDomainEvent {
@@ -290,6 +292,7 @@ export class QuoteCreateFailedEvent extends PaymentIntentDomainEvent {
 export type PaymentCreatedPayload = {
   id: string;
   paymentIntentId: string;
+  quoteId?: string;
   senderWalletAddress: string;
   senderWalletAddressId: string;
   debitAmount: string | null;
@@ -301,6 +304,8 @@ export type PaymentCreatedPayload = {
   assetScale: number;
   receiveAssetScale: number;
   receiveAssetCode: string;
+  paymentIntentRemoteUrl?: string;
+  metadata?: Record<string, unknown>;
 };
 
 export class PaymentCreatedEvent extends PaymentIntentDomainEvent {
@@ -344,6 +349,7 @@ export type PaymentCompletedPayload = {
   assetScale: number;
   receiveAssetScale: number;
   receiveAssetCode: string;
+  metadata?: Record<string, unknown>;
 };
 
 export class PaymentCompletedEvent extends PaymentIntentDomainEvent {
@@ -356,11 +362,19 @@ export class PaymentCompletedEvent extends PaymentIntentDomainEvent {
   }
 }
 
+export type PaymentCompleteFailedAdditionalData = {
+  walletAddressId?: string;
+  sentAmount?: string;
+  assetCode?: string;
+  assetScale?: number;
+};
+
 export type PaymentCompleteFailedPayload = {
   id: string;
   paymentIntentId: string;
   grantId?: string;
-} & FailedMessagePayload;
+} & FailedMessagePayload &
+  PaymentCompleteFailedAdditionalData;
 
 export class PaymentCompleteFailedEvent extends PaymentIntentDomainEvent {
   payload: PaymentCompleteFailedPayload;
@@ -505,7 +519,7 @@ export type RemotePaymentPreparedPayload = {
   peerId: string;
   requestId: string;
   debitAmount: string;
-  receiveAmount: string;
+  receiveAmount: string | null;
   assetCode: string;
   assetScale: number;
   sharedSecret: string;

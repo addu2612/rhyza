@@ -143,7 +143,7 @@ describe('IlpEventHandler', () => {
         paymentIntentId: 'intent-1',
         paymentId: 'pay-1',
         ledgerTransferId: 'xfer-1',
-        destinationIlpAddress: 'test.rafiki.token',
+        destinationIlpAddress: 'test.rhyza.token',
         peerId: 'peer-1',
         requestId: 'req-1',
         debitAmount: '100',

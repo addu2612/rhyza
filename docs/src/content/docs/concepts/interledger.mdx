@@ -12,13 +12,13 @@ At the core of Interledger is the Interledger Protocol (ILP). It's a request/res
 
 These packets of data carry information about a payment. Typically, information about a single aggregate payment from sender to receiver is split into multiple ILP packets.
 
-Each packet represents a conditional IOU which affects financial accounting balances between peers. Amounts adjust based on the payment sender's asset, the receiver's asset, and Rhyza's configured [exchange rates service](/integration/checklist#exchange-rates). Then, the amounts are used to update [peer liquidity](/concepts/accounting) in Rhyza's ledger.
+Each packet represents a conditional IOU which affects financial accounting balances between peers. Amounts adjust based on the payment sender's asset, the receiver's asset, and Rhyza's configured [exchange rates service](/integration#exchange-rates). Then, the amounts are used to update [peer liquidity](/concepts/accounting) in Rhyza's ledger.
 
 ## Peers
 
 Interledger itself is a network of computers that enables sending payment messages across payment networks. Each computer on the network is a node.
 
-For two nodes on the Interledger network to exchange ILP packets with one another, the two nodes must be peers. There are a number of [requirements](/integration/checklist#peers) that an FSP and its potential peer must meet to form a peering relationship.
+For two nodes on the Interledger network to exchange ILP packets with one another, the two nodes must be peers. There are a number of [requirements](/integration#peers) that an FSP and its potential peer must meet to form a peering relationship.
 
 Since the purpose of peering is to facilitate payments, which often involves extending lines of credit, FSPs should only peer with entities they trust. We strongly recommend potential peers define their expectations and outline their agreements in a legally binding document before peering with one another.
 
@@ -48,4 +48,4 @@ The <LinkOut href='https://interledger.org/developers/rfcs/stream-protocol/'>STR
 
 Rhyza's Interledger connector supports sending and receiving STREAM packets. STREAM packets are encoded, encrypted, and sent as the `data` field in ILP packets. The protocol uses a shared secret to authenticate and encrypt packets, and to generate conditions and fulfillments.
 
-A critical function of STREAM is to determine the path exchange rate and handle any changes in the rate. Rhyza's [exchange rates](/integration/checklist#exchange-rates) service allows FSPs to provide exchange rate information.
+A critical function of STREAM is to determine the path exchange rate and handle any changes in the rate. Rhyza's [exchange rates](/integration#exchange-rates) service allows FSPs to provide exchange rate information.

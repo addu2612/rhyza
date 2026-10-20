@@ -1,0 +1,35 @@
+meta {
+  name: Create Receiver Wallet Address
+  type: http
+  seq: 4
+}
+
+post {
+  url: http://{{adminApiUrl}}/wallet-addresses
+  body: json
+  auth: inherit
+}
+
+body:json {
+  {
+    "assetCode": "USD",
+    "address": "https://test.com/receiver",
+    "publicName": "test receiver"
+  }
+}
+
+script:post-response {
+  const body = res.getBody();
+  
+  if (body?.address) {
+    bru.setVar("receiverWalletAddress", body.address);
+  }
+  if (body?.id) {
+    bru.setVar("receiverWalletAddressId", body.id);
+  }
+}
+
+settings {
+  encodeUrl: true
+  timeout: 0
+}

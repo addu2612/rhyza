@@ -225,7 +225,7 @@ describe('IlpCommandHandler — remote quote receiving', () => {
       createFakeResolveStreamCredentials(),
       null
     );
-    await consumer.deliver([inboundProbe('test.rafiki.unknown-token')]);
+    await consumer.deliver([inboundProbe('test.rhyza.unknown-token')]);
 
     const reject = rejectFor(producer);
     assert.ok(reject, 'expected an F06 reject');

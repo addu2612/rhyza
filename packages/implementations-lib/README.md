@@ -1,4 +1,4 @@
-# Rafiki v2 Common Implementations Lib
+# Rhyza Common Implementations Lib
 
 This library provides common implementations for technical components required by throughout the project.
 
@@ -8,7 +8,6 @@ Basic rules:
 - Domain code cannot import/reference this library, only the interfaces in common-types-lib
 - Application code layer components, like services, can import/reference this lib
 - Internal clients libs or CLI tools for development can can import/reference this lib
-- Any library to be made available outside Rafiki should not
 
 If Bounded context's require specific implementations that no other BCs require, or if they require specializations of the implementations provided by this library, then that BC should create its own implementations lib, as done for example, in pal-implemenation-lib.
 

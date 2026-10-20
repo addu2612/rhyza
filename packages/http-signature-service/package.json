@@ -9,7 +9,7 @@
   },
   "keywords": [],
   "author": "",
-  "license": "ISC",
+  "license": "Apache-2.0",
   "dependencies": {
     "@interledger/http-signature-utils": "^2.0.3",
     "fastify": "~5.3.3"

@@ -136,12 +136,14 @@ describe('Payments Client', () => {
   test('create payment intent (all fields)', async () => {
     const id = randomUUID();
     const expiresAt = new Date(Date.now() + 1000 * 60 * 5).toISOString(); // 5 minutes
+    const metadata = { description: 'test' };
     const result = await paymentsClient.createPaymentIntent(
       id,
       receiverWalletAddressId,
       RECEIVER_WALLET_ADDRESS,
       100,
-      expiresAt
+      expiresAt,
+      metadata
     );
 
     assert.equal(result.id, id);
@@ -232,7 +234,7 @@ describe('Payments Client', () => {
       const quoteId = randomUUID();
       const created = await paymentsClient.createQuote(
         quoteId,
-        { incomingPaymentId: paymentIntentId },
+        { paymentIntentId },
         senderWalletAddressId,
         SENDER_WALLET_ADDRESS
       );
@@ -283,7 +285,7 @@ describe('Payments Client', () => {
       const quoteId = randomUUID();
       await paymentsClient.createQuote(
         quoteId,
-        { incomingPaymentId: paymentIntentId },
+        { paymentIntentId },
         senderWalletAddressId,
         SENDER_WALLET_ADDRESS
       );
@@ -364,7 +366,7 @@ describe('Payments Client', () => {
       const quoteId = randomUUID();
       const result = await paymentsClient.createQuote(
         quoteId,
-        { incomingPaymentId: paymentIntentId },
+        { paymentIntentId },
         senderWalletAddressId,
         SENDER_WALLET_ADDRESS,
         100
@@ -381,7 +383,7 @@ describe('Payments Client', () => {
       const quoteId = randomUUID();
       const result = await paymentsClient.createQuote(
         quoteId,
-        { incomingPaymentId: paymentIntentId },
+        { paymentIntentId },
         senderWalletAddressId,
         SENDER_WALLET_ADDRESS,
         undefined,
@@ -399,7 +401,7 @@ describe('Payments Client', () => {
       const quoteId = randomUUID();
       const result = await paymentsClient.createQuote(
         quoteId,
-        { incomingPaymentId: paymentIntentId },
+        { paymentIntentId },
         senderWalletAddressId,
         SENDER_WALLET_ADDRESS
       );
@@ -415,7 +417,7 @@ describe('Payments Client', () => {
       const quoteId = randomUUID();
       await paymentsClient.createQuote(
         quoteId,
-        { incomingPaymentId: paymentIntentId },
+        { paymentIntentId },
         senderWalletAddressId,
         SENDER_WALLET_ADDRESS,
         100
@@ -424,7 +426,7 @@ describe('Payments Client', () => {
       try {
         await paymentsClient.createQuote(
           quoteId,
-          { incomingPaymentId: paymentIntentId },
+          { paymentIntentId },
           senderWalletAddressId,
           SENDER_WALLET_ADDRESS,
           100
@@ -439,7 +441,7 @@ describe('Payments Client', () => {
       try {
         await paymentsClient.createQuote(
           randomUUID(),
-          { incomingPaymentId: randomUUID() },
+          { paymentIntentId: randomUUID() },
           senderWalletAddressId,
           SENDER_WALLET_ADDRESS,
           100
@@ -450,15 +452,14 @@ describe('Payments Client', () => {
       }
     });
 
-    test('remote quote without openPaymentsUrl throws FAILED_PRECONDITION ServiceError', async () => {
+    test('quote by url without openPaymentsUrl throws FAILED_PRECONDITION ServiceError', async () => {
       const clientWithoutUrl = new PaymentsClient(PAYMENTS_GRPC_URL);
       await clientWithoutUrl.init();
       try {
         await clientWithoutUrl.createQuote(
           randomUUID(),
           {
-            incomingPaymentUrl:
-              'https://remote.example.com/incoming-payments/123'
+            paymentIntentUrl: 'https://remote.example.com/incoming-payments/123'
           },
           senderWalletAddressId,
           SENDER_WALLET_ADDRESS
@@ -467,7 +468,7 @@ describe('Payments Client', () => {
       } catch (e) {
         assert.ok(isGrpcServiceError(e));
         assert.equal(e.code, status.FAILED_PRECONDITION);
-        assert.equal(e.name, 'RemoteQuotingNotConfigured');
+        assert.equal(e.name, 'OpenPaymentsUrlNotConfigured');
       } finally {
         await clientWithoutUrl.disconnect();
       }
@@ -478,7 +479,7 @@ describe('Payments Client', () => {
       try {
         await paymentsClient.createQuote(
           randomUUID(),
-          { incomingPaymentId: paymentIntentId },
+          { paymentIntentId },
           randomUUID(),
           SENDER_WALLET_ADDRESS,
           100
@@ -496,7 +497,7 @@ describe('Payments Client', () => {
       const quoteId = randomUUID();
       await paymentsClient.createQuote(
         quoteId,
-        { incomingPaymentId: paymentIntentId },
+        { paymentIntentId },
         senderWalletAddressId,
         SENDER_WALLET_ADDRESS
       );
@@ -504,14 +505,15 @@ describe('Payments Client', () => {
       const paymentId = randomUUID();
       const result = await paymentsClient.createPayment(
         paymentId,
+        { paymentIntentId },
         senderWalletAddressId,
         SENDER_WALLET_ADDRESS,
-        paymentIntentId,
         quoteId
       );
 
       assert.ok(result);
       assert.equal(result.id, paymentId);
+      assert.equal(result.paymentIntentId, paymentIntentId);
     });
 
     test('create payment with debitAmount', async () => {
@@ -519,15 +521,16 @@ describe('Payments Client', () => {
       const paymentId = randomUUID();
       const result = await paymentsClient.createPayment(
         paymentId,
+        { paymentIntentId },
         senderWalletAddressId,
         SENDER_WALLET_ADDRESS,
-        paymentIntentId,
         undefined,
         100
       );
 
       assert.ok(result);
       assert.equal(result.id, paymentId);
+      assert.equal(result.paymentIntentId, paymentIntentId);
     });
 
     test('create payment with grantId', async () => {
@@ -535,11 +538,12 @@ describe('Payments Client', () => {
       const paymentId = randomUUID();
       const result = await paymentsClient.createPayment(
         paymentId,
+        { paymentIntentId },
         senderWalletAddressId,
         SENDER_WALLET_ADDRESS,
-        paymentIntentId,
-        undefined,
+        undefined, // quoteId
         100,
+        undefined, // createdAt
         'grant-1'
       );
 
@@ -551,9 +555,9 @@ describe('Payments Client', () => {
       const paymentId = randomUUID();
       await paymentsClient.createPayment(
         paymentId,
+        { paymentIntentId },
         senderWalletAddressId,
         SENDER_WALLET_ADDRESS,
-        paymentIntentId,
         undefined,
         100
       );
@@ -561,9 +565,9 @@ describe('Payments Client', () => {
       try {
         await paymentsClient.createPayment(
           paymentId,
+          { paymentIntentId },
           senderWalletAddressId,
           SENDER_WALLET_ADDRESS,
-          paymentIntentId,
           undefined,
           100
         );
@@ -577,9 +581,9 @@ describe('Payments Client', () => {
       try {
         await paymentsClient.createPayment(
           randomUUID(),
+          { paymentIntentId: randomUUID() },
           senderWalletAddressId,
           SENDER_WALLET_ADDRESS,
-          randomUUID(),
           undefined,
           100
         );
@@ -594,15 +598,33 @@ describe('Payments Client', () => {
       try {
         await paymentsClient.createPayment(
           randomUUID(),
+          { paymentIntentId },
           randomUUID(),
           SENDER_WALLET_ADDRESS,
-          paymentIntentId,
           undefined,
           100
         );
         assert.fail('expected error for unknown wallet address');
       } catch (e) {
         assertGrpcServiceError(e, status.NOT_FOUND);
+      }
+    });
+
+    test('url without configured openPaymentsUrl is rejected', async () => {
+      const clientWithoutUrl = new PaymentsClient(PAYMENTS_GRPC_URL);
+      try {
+        await clientWithoutUrl.createPayment(
+          randomUUID(),
+          { paymentIntentUrl: 'https://other.example.com/incoming/abc' },
+          senderWalletAddressId,
+          SENDER_WALLET_ADDRESS,
+          undefined,
+          100
+        );
+        assert.fail('expected error for unconfigured openPaymentsUrl');
+      } catch (e) {
+        assertGrpcServiceError(e, status.FAILED_PRECONDITION);
+        assert.equal((e as Error).name, 'OpenPaymentsUrlNotConfigured');
       }
     });
   });
@@ -613,9 +635,9 @@ describe('Payments Client', () => {
       const paymentId = randomUUID();
       await paymentsClient.createPayment(
         paymentId,
+        { paymentIntentId },
         senderWalletAddressId,
         SENDER_WALLET_ADDRESS,
-        paymentIntentId,
         undefined,
         100
       );
@@ -634,9 +656,9 @@ describe('Payments Client', () => {
       const paymentId = randomUUID();
       await paymentsClient.createPayment(
         paymentId,
+        { paymentIntentId },
         senderWalletAddressId,
         SENDER_WALLET_ADDRESS,
-        paymentIntentId,
         undefined,
         100
       );
@@ -666,9 +688,9 @@ describe('Payments Client', () => {
       const paymentId = randomUUID();
       await paymentsClient.createPayment(
         paymentId,
+        { paymentIntentId },
         senderWalletAddressId,
         SENDER_WALLET_ADDRESS,
-        paymentIntentId,
         undefined,
         100
       );
@@ -853,10 +875,10 @@ describe('Payments Client', () => {
         const paymentId = randomUUID();
         await paymentsClient.createPayment(
           paymentId,
+          { paymentIntentId: intentId },
           pageSenderWalletAddressId,
           PAGE_SENDER_ADDRESS,
-          intentId,
-          undefined,
+          undefined, // quoteId
           100
         );
         paymentIds.push(paymentId);
@@ -898,11 +920,15 @@ describe('Payments Client', () => {
         });
         assert.equal(payment.sentAmount.value, 0n);
         assert.equal(payment.sentAmount.assetCode, ASSET_CODE);
-        // receiveAmount hydrated with the parent intent's (receive-side) asset
+        // receiveAmount hydrated with the parent intent's (receive-side)
+        assert.ok(
+          payment.receiveAmount,
+          'expected receiveAmount on page items'
+        );
         assert.equal(payment.receiveAmount.assetCode, ASSET_CODE);
         assert.equal(payment.receiveAmount.assetScale, ASSET_SCALE);
-        // LOCAL parent intents have no remoteUrl
-        assert.equal(payment.remoteUrl, undefined);
+        // LOCAL parent intents have no remote url
+        assert.equal(payment.remotePaymentIntentUrl, undefined);
       }
     });
 

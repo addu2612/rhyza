@@ -1,0 +1,38 @@
+meta {
+  name: Register Wallet Address Key
+  type: http
+<<<<<<< HEAD:bruno/collections/rafiki-v2/Admin API/Register Wallet Address Key.bru
+  seq: 5
+=======
+  seq: 6
+>>>>>>> main:bruno/collections/rhyza/Admin API/Register Wallet Address Key.bru
+}
+
+post {
+  url: http://{{adminApiUrl}}/wallet-addresses/{{senderWalletAddressId}}/keys
+  body: json
+  auth: inherit
+}
+
+script:pre-request {
+  const scripts = require('./scripts');
+  
+  if (!bru.getVar('clientPublicJwk')) {
+    scripts.generateClientKeys();
+  }
+  
+  req.setBody(JSON.parse(bru.getVar('clientPublicJwk')));
+}
+
+script:post-response {
+  const body = res.getBody();
+  
+  if (body?.id) {
+    bru.setVar("walletAddressKeyId", body.id);
+  }
+}
+
+settings {
+  encodeUrl: true
+  timeout: 0
+}

@@ -95,7 +95,7 @@ export class MockRemotePaymentIntentService
     this.response = response;
   }
 
-  async fetchIncomingPayment(
+  async fetchPaymentIntent(
     // eslint-disable-next-line @typescript-eslint/no-unused-vars
     _url: string
   ): Promise<IRemotePaymentIntentDetails> {

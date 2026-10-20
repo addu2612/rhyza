@@ -7,7 +7,11 @@ import {
   httpStatusFromClientError,
   isAuthClientError
 } from 'auth-client-lib';
-import { GetGrantRequest } from 'admin-client-lib';
+import {
+  GetGrantRequest,
+  JsonWebKey,
+  instanceOfJsonWebKey
+} from 'admin-client-lib';
 
 interface GrantRouteOptions extends FastifyPluginOptions {
   authClient: AuthClient;
@@ -16,7 +20,7 @@ interface GrantRouteOptions extends FastifyPluginOptions {
 interface AdminApiGrant {
   id: string;
   state: GetGrantResult['state'];
-  client: string;
+  client: string | JsonWebKey;
   interactionNonce?: string;
   subjectIds?: GetGrantResult['subjectIds'];
   accesses?: GetGrantResult['accesses'];
@@ -24,10 +28,17 @@ interface AdminApiGrant {
 }
 
 function toAdminApiGrant(authClientGrant: GetGrantResult): AdminApiGrant {
+  let client: string | JsonWebKey = authClientGrant.client;
+  try {
+    const maybeJsonWebKey = JSON.parse(client);
+    if (instanceOfJsonWebKey(maybeJsonWebKey)) client = maybeJsonWebKey;
+  } catch {
+    // Just pass plain string if invalid object.
+  }
   return {
     id: authClientGrant.id,
     state: authClientGrant.state,
-    client: authClientGrant.client,
+    client,
     interactionNonce: authClientGrant.interactionNonce,
     subjectIds: authClientGrant.subjectIds,
     accesses: authClientGrant.accesses,

@@ -1,0 +1,37 @@
+meta {
+  name: Create Quote (Node A)
+  type: http
+  seq: 2
+}
+
+post {
+  url: http://{{opAHost}}/quotes
+  body: json
+  auth: none
+}
+
+body:json {
+  {
+    "walletAddress": "https://test.com/sender",
+    "receiver": "{{receiverIntentUrl}}",
+    "method": "ilp",
+    "debitAmount": {
+      "assetCode": "USD",
+      "assetScale": 2,
+      "value": "1000"
+    }
+  }
+}
+
+script:post-response {
+  const body = res.getBody();
+  if (body?.id) {
+    bru.setVar("quoteId", body.id);
+  }
+}
+
+docs {
+  Node A quotes against Node B's incoming payment URL. The quote's `id` is an
+  opaque compound (payment intent + quote) — Node A imports the remote intent
+  as part of quoting, so subsequent steps need no separate intent id.
+}

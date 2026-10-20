@@ -60,7 +60,8 @@ export default defineConfig({
           lang: 'en'
         },
         es: {
-          label: 'Español'
+          label: 'Español',
+          lang: 'es'
         }
       },
       head: [
@@ -111,11 +112,7 @@ export default defineConfig({
           collapsed: true,
           items: [
             {
-              label: 'Financial service provider',
-              link: '/concepts/financial-service-provider'
-            },
-            {
-              label: 'Accounting',
+              label: 'Accounts and liquidity',
               translations: { es: 'Transacciones en Rhyza' },
               link: '/concepts/accounting'
             },
@@ -123,6 +120,11 @@ export default defineConfig({
               label: 'Clearing and settlement',
               translations: { es: 'Compensación y liquidación' },
               link: '/concepts/clearing-settlement'
+            },
+            {
+              label: 'Financial service provider',
+              translations: { es: 'Proveedor de servicios financieros (FSP)' },
+              link: '/concepts/financial-service-provider'
             },
             {
               label: 'Interledger',
@@ -135,6 +137,11 @@ export default defineConfig({
               link: '/concepts/open-payments'
             },
             {
+              label: 'Payment intents and payments',
+              translations: { es: 'Payment intents and payments' },
+              link: '/concepts/payment-intents-and-payments'
+            },
+            {
               label: 'Wallet addresses',
               translations: { es: 'Wallet addresses' },
               link: '/concepts/wallet-addresses'
@@ -143,21 +150,11 @@ export default defineConfig({
         },
         {
           label: 'Integration',
-          collapsed: true,
-          items: [
-            {
-              label: 'Overview',
-              link: '/integration/overview'
-            },
-            {
-              label: 'Integration checklist',
-              link: '/integration/checklist'
-            },
-            {
-              label: 'Test locally',
-              link: '/integration/testlocal'
-            }
-          ]
+          link: '/integration'
+        },
+        {
+          label: 'Test locally',
+          link: '/testlocal'
         },
         {
           label: 'API Specifications',

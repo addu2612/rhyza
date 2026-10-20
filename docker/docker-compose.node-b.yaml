@@ -1,14 +1,14 @@
-# Node B — second, fully independent Rafiki instance for remote payments testing.
+# Node B — second, fully independent Rhyza instance for remote payments testing.
 #
 # Overlay for docker/docker-compose.yaml. Always run layered with the base file so the
-# shared `rafiki-v2` network (and shared observability) come from the base:
+# shared `rhyza` network (and shared observability) come from the base:
 #
 #   docker compose -f docker/docker-compose.yaml -f docker/docker-compose.node-b.yaml up -d --build
 #
 # Node B duplicates all app services (suffixed `-b`) plus its own dedicated infra
 # (kafka-b, mongodb-b, redis-b) — shared infra (otel/prometheus/tempo/grafana/nginx) is
 # NOT redeclared here.
-name: rafiki-v2
+name: rhyza
 services:
   admin-api-service-b:
     build:
@@ -34,7 +34,7 @@ services:
       ilp-api-service-b:
         condition: service_started
     networks:
-      - rafiki-v2
+      - rhyza
 
   open-payments-resource-service-b:
     build:
@@ -46,7 +46,7 @@ services:
       PAYMENTS_GRPC_URL: payments-api-service-b:50052
       OPEN_PAYMENTS_RESOURCE_SERVICE_URL: http://open-payments-resource-service-b:3002
       STREAM_SERVER_SECRET: cmFmaWtpLXYyLWRldi1zdHJlYW0tc2VjcmV0LTAwMDE
-      ILP_ADDRESS: private.rafiki.b
+      ILP_ADDRESS: private.rhyza.b
     ports:
       - '4002:3002'
     depends_on:
@@ -57,7 +57,7 @@ services:
     networks:
       # Reached across nodes by its Docker service name (open-payments-resource-service-b);
       # no alias needed. Node A fetches this when a quote references a Node B intent.
-      - rafiki-v2
+      - rhyza
 
   pal-api-service-b:
     build:
@@ -77,7 +77,7 @@ services:
       redis-b:
         condition: service_healthy
     networks:
-      - rafiki-v2
+      - rhyza
   pal-ledger-command-handler-service-b:
     build:
       context: ../
@@ -94,7 +94,7 @@ services:
       redis-b:
         condition: service_healthy
     networks:
-      - rafiki-v2
+      - rhyza
   pal-event-handler-service-b:
     build:
       context: ../
@@ -112,7 +112,7 @@ services:
       redis-b:
         condition: service_healthy
     networks:
-      - rafiki-v2
+      - rhyza
 
   payments-api-service-b:
     build:
@@ -130,7 +130,7 @@ services:
       init-kafka-b:
         condition: service_completed_successfully
     networks:
-      - rafiki-v2
+      - rhyza
 
   payments-command-handler-service-b:
     build:
@@ -151,7 +151,7 @@ services:
       pal-api-service-b:
         condition: service_started
     networks:
-      - rafiki-v2
+      - rhyza
 
   payments-event-handler-service-b:
     build:
@@ -164,7 +164,7 @@ services:
       init-kafka-b:
         condition: service_completed_successfully
     networks:
-      - rafiki-v2
+      - rhyza
   notifications-command-handler-service-b:
     build:
       context: ../
@@ -182,7 +182,7 @@ services:
       mongodb-b:
         condition: service_healthy
     networks:
-      - rafiki-v2
+      - rhyza
 
   notifications-event-handler-service-b:
     build:
@@ -203,7 +203,7 @@ services:
       init-kafka-b:
         condition: service_completed_successfully
     networks:
-      - rafiki-v2
+      - rhyza
 
   ilp-connector-service-b:
     build:
@@ -224,7 +224,7 @@ services:
       redis-b:
         condition: service_healthy
     networks:
-      - rafiki-v2
+      - rhyza
   ase-mock-service-b:
     build:
       context: ../
@@ -239,7 +239,7 @@ services:
     depends_on:
       - admin-api-service-b
     networks:
-      - rafiki-v2
+      - rhyza
 
   ilp-command-handler-service-b:
     build:
@@ -251,14 +251,14 @@ services:
       LOG_LEVEL: debug
       MONGODB_URL: mongodb://root:mongoPass@mongodb-b:27017
       STREAM_SERVER_SECRET: cmFmaWtpLXYyLWRldi1zdHJlYW0tc2VjcmV0LTAwMDE
-      ILP_ADDRESS: private.rafiki.b
+      ILP_ADDRESS: private.rhyza.b
     depends_on:
       init-kafka-b:
         condition: service_completed_successfully
       mongodb-b:
         condition: service_healthy
     networks:
-      - rafiki-v2
+      - rhyza
 
   ilp-api-service-b:
     build:
@@ -276,7 +276,7 @@ services:
       mongodb-b:
         condition: service_healthy
     networks:
-      - rafiki-v2
+      - rhyza
 
   ilp-event-handler-service-b:
     build:
@@ -290,7 +290,7 @@ services:
       init-kafka-b:
         condition: service_completed_successfully
     networks:
-      - rafiki-v2
+      - rhyza
 
   mongodb-b:
     image: mongo
@@ -308,7 +308,7 @@ services:
       timeout: 10s
       retries: 5
     networks:
-      - rafiki-v2
+      - rhyza
 
   kafka-b:
     image: apache/kafka:4.0.0
@@ -336,7 +336,7 @@ services:
     ports:
       - '9093:9092'
     networks:
-      - rafiki-v2
+      - rhyza
 
   init-kafka-b:
     image: apache/kafka:4.0.0
@@ -361,17 +361,20 @@ services:
       ./kafka-topics.sh --bootstrap-server kafka-b:19092 --create --if-not-exists --partitions 24 --topic ledger-domain-events
       ./kafka-topics.sh --bootstrap-server kafka-b:19092 --create --if-not-exists --partitions 24 --topic ledger-snapshot-events
       ./kafka-topics.sh --bootstrap-server kafka-b:19092 --create --if-not-exists --partitions 24 --topic ledger-state-events
+      ./kafka-topics.sh --bootstrap-server kafka-b:19092 --create --if-not-exists --partitions 24 --topic ledger-timer-events
       ./kafka-topics.sh --bootstrap-server kafka-b:19092 --create --if-not-exists --partitions 24 --topic wallet-address-domain-events
       ./kafka-topics.sh --bootstrap-server kafka-b:19092 --create --if-not-exists --partitions 24 --topic fxrate-domain-events
       ./kafka-topics.sh --bootstrap-server kafka-b:19092 --create --if-not-exists --partitions 24 --topic ilp-domain-events
       ./kafka-topics.sh --bootstrap-server kafka-b:19092 --create --if-not-exists --partitions 24 --topic ilp-commands
       ./kafka-topics.sh --bootstrap-server kafka-b:19092 --create --if-not-exists --partitions 24 --topic ilp-connector-commands
       ./kafka-topics.sh --bootstrap-server kafka-b:19092 --create --if-not-exists --partitions 24 --topic notification-commands
+      ./kafka-topics.sh --bootstrap-server kafka-b:19092 --create --if-not-exists --partitions 24 --topic auth-commands
+      ./kafka-topics.sh --bootstrap-server kafka-b:19092 --create --if-not-exists --partitions 24 --topic auth-domain-events
       echo -e '\nSuccessfully created the following topics:'
       ./kafka-topics.sh --bootstrap-server kafka-b:19092 --list
       "
     networks:
-      - rafiki-v2
+      - rhyza
 
   redis-b:
     image: redis:latest
@@ -384,7 +387,7 @@ services:
       timeout: 10s
       retries: 10
     networks:
-      - rafiki-v2
+      - rhyza
 
   redpanda-console-b:
     depends_on:
@@ -396,7 +399,7 @@ services:
     ports:
       - 8081:8080
     networks:
-      - rafiki-v2
+      - rhyza
 
 volumes:
   mongodb-b-data:
