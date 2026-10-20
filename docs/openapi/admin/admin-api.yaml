@@ -24,6 +24,8 @@ tags:
     x-displayName: Peers
   - name: liquidity
     x-displayName: Liquidity
+  - name: grants
+    x-displayName: Grants
   - name: rates
     x-displayName: Rates
 paths:
@@ -752,7 +754,7 @@ paths:
       summary: Get grant
       description: >-
         Get the grant associated with the provided id.
-        tags:
+      tags:
         - grants
       operationId: getGrant
       parameters:
@@ -1446,7 +1448,7 @@ components:
           $ref: '#/components/schemas/GrantState'
           description: The current state of the grant.
         client:
-          $ref: '#/components/schemas/Client' 
+          $ref: '#/components/schemas/Client'
           description: The client's wallet address, or a JWK if directed identity was used.
         subjectIds:
           type: array
