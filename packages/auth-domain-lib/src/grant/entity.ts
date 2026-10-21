@@ -158,6 +158,10 @@ export class GrantEntity implements IGrant {
     return new GrantEntity(obj);
   }
 
+  private isGrantWithSpentAmountsInterval(): boolean {
+    return !!this._spentAmounts?.interval;
+  }
+
   // Computes the state of the grant as well as any continuation information
   // depending on the access types requested.
   static create(
@@ -571,6 +575,7 @@ export class GrantEntity implements IGrant {
   }
 
   private getSpentAmountInterval(): Interval {
+    if (!this.isGrantWithSpentAmountsInterval()) throw new InvalidGrantError();
     return Interval.fromDateTimes(
       new Date(this._spentAmounts!.interval!.start),
       new Date(this._spentAmounts!.interval!.end)
@@ -593,27 +598,55 @@ export class GrantEntity implements IGrant {
       throw new InvalidGrantError();
     }
 
-    const createAtDateTime = DateTime.fromJSDate(new Date(createdAt));
-
     if (
-      this._spentAmounts.interval &&
-      this.getSpentAmountInterval().contains(createAtDateTime) &&
-      this._spentAmounts.interval.total[amountType] + BigInt(value) >
-        amountLimit
+      this.exceedsCurrentIntervalLimit(
+        amountType,
+        value,
+        amountLimit,
+        createdAt
+      )
     ) {
       // Throw if the amount will exceed the grant spend limit within the interval, if the payment creation date is within the currently tracked interval..
       throw new InvalidGrantError();
-    } else if (
-      this._spentAmounts.interval &&
-      this.getSpentAmountInterval().isBefore(createAtDateTime) &&
-      this.getGrantIntervalString() &&
-      !getInterval(this.getGrantIntervalString() as string, new Date(createdAt))
-    ) {
+    } else if (this.hasNoFutureIntervalSpendAvailable(createdAt)) {
       // Throw if payment creation date is after the currently tracked interval and is not contained in a subsequent one.
       throw new InvalidGrantError();
     }
 
     return true;
+  }
+
+  // Determines if an outgoing payment was created in the current interval, if the grant has one,
+  // and if its desired spend amount will exceed the spend limit in that interval.
+  private exceedsCurrentIntervalLimit(
+    amountType: SpentAmountType,
+    value: string,
+    amountLimit: bigint,
+    createdAt: string
+  ): boolean {
+    return !!(
+      this._spentAmounts?.interval &&
+      this.getSpentAmountInterval().contains(
+        DateTime.fromJSDate(new Date(createdAt))
+      ) &&
+      this._spentAmounts.interval.total[amountType] + BigInt(value) >
+        amountLimit
+    );
+  }
+
+  // Determines if an outgoing payment was created in an interval subsequent to the
+  // currently tracked one, if the grant tracks intervals, and if its desired spend amount
+  // will exceed the spend limit in that subsequent interval.
+  private hasNoFutureIntervalSpendAvailable(createdAt: string): boolean {
+    const grantIntervalString = this.getGrantIntervalString();
+    return !!(
+      this._spentAmounts?.interval &&
+      this.getSpentAmountInterval().isBefore(
+        DateTime.fromJSDate(new Date(createdAt))
+      ) &&
+      grantIntervalString &&
+      !getInterval(grantIntervalString, new Date(createdAt))
+    );
   }
 
   private updateSpentAmount(
@@ -679,15 +712,14 @@ export class GrantEntity implements IGrant {
 
     const { limits } = outgoingPaymentAccessItem;
     if (!limits) {
-      if (debitAmountValue)
-        this._spentAmounts.total.debit += BigInt(debitAmountValue);
-      if (receiveAmountValue)
-        this._spentAmounts.total.receive += BigInt(receiveAmountValue);
-
+      debitAmountValue &&
+        (this._spentAmounts.total.debit += BigInt(debitAmountValue));
+      receiveAmountValue &&
+        (this._spentAmounts.total.receive += BigInt(receiveAmountValue));
       return this._spentAmounts;
     }
 
-    if (debitAmountValue && limits) {
+    if (debitAmountValue) {
       this.validateSpentAmount(
         'debit',
         debitAmountValue,
