@@ -3,42 +3,66 @@
 import { describe, test } from 'node:test';
 import * as assert from 'node:assert/strict';
 import { randomUUID } from 'crypto';
+import { sendUnaryData, ServerUnaryCall } from '@grpc/grpc-js';
+import {
+  ILogger,
+  IMessage,
+  IMessageConsumer,
+  IMessageProducer
+} from 'common-types-lib';
 import { CreatePaymentIntentRequest } from 'payments-public-types-lib';
-import { CreatePaymentIntentCmd } from 'payments-domain-lib';
+import {
+  CreatePaymentIntentCmd,
+  IPaymentIntentRepository
+} from 'payments-domain-lib';
 import { PaymentsServiceServer } from '../src/grpc/grpc-service.js';
 
 const noop = () => {};
-const logger: any = {
-  createChild: () => logger,
+const logger = {
+  child: () => logger,
   isDebugEnabled: () => false,
   debug: noop,
   info: noop,
   warn: noop,
   error: noop,
   fatal: noop
+} as unknown as ILogger;
+
+/** Exposes the private unary handler so tests can invoke it as gRPC would. */
+type UnaryHandler = {
+  _handleUnary(
+    call: Partial<ServerUnaryCall<unknown, unknown>>,
+    callback: sendUnaryData<unknown>
+  ): Promise<void>;
 };
 
 /** Builds a server whose producer records every message sent to it. */
 const createServer = () => {
-  const sent: any[] = [];
-  const producer: any = { send: async (msg: any) => sent.push(msg) };
-  const consumer: any = { setBatchCallbackFn: noop };
+  const sent: IMessage[] = [];
+  const producer = {
+    send: async (msg: IMessage) => {
+      sent.push(msg);
+      return [];
+    }
+  } as unknown as IMessageProducer;
+  const consumer = {
+    setBatchCallbackFn: noop
+  } as unknown as IMessageConsumer;
   // 1ms response timeout so the pending-response timer doesn't hold the test open
   const server = new PaymentsServiceServer(
     'test-instance',
     'localhost:0',
     producer,
     consumer,
-    {} as any,
+    {} as IPaymentIntentRepository,
     logger,
     1
   );
   return { server, sent };
 };
 
-/** Invokes the private unary handler as gRPC would. */
 const callUnary = (server: PaymentsServiceServer, request: unknown) =>
-  (server as any)._handleUnary(
+  (server as unknown as UnaryHandler)._handleUnary(
     { request, getDeadline: () => Infinity },
     noop
   );
