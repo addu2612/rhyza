@@ -19,23 +19,32 @@ export const QuoteState = {
 } as const;
 export type QuoteState = keyof typeof QuoteState;
 
+export interface IQuoteRoute {
+  peerId: string;
+  peerAssetCode: string;
+  peerAssetScale: number;
+  sourceAmount: bigint;
+  senderAssetCode: string;
+}
+
 export interface IBaseQuote {
   id: string;
   state: QuoteState;
   senderWalletAddress: string;
   senderWalletAddressId: string;
   createdAt: Date;
+
+  /**
+   * Remote quote route. Fixed when the quote is created, absent for a local
+   * quote.
+   */
+  route?: IQuoteRoute;
 }
 
 export interface IPendingQuote extends IBaseQuote {
   state: 'PENDING';
   debitAmount?: bigint;
   receiveAmount?: bigint;
-  peerId?: string;
-  peerAssetCode?: string;
-  peerAssetScale?: number;
-  sourceAmount?: bigint;
-  senderAssetCode?: string;
 }
 
 export interface ICompletedQuote extends IBaseQuote {
@@ -54,7 +63,8 @@ export interface IFailedQuote extends IBaseQuote {
 
 export type IQuote = IPendingQuote | ICompletedQuote | IFailedQuote;
 
-export interface ISentPayment {
+/** Fields every payment has (local or remote). */
+interface IBaseSentPayment {
   id: string;
   state: SentPaymentState;
   senderWalletAddress: string;
@@ -63,12 +73,54 @@ export interface ISentPayment {
   assetCode: string;
   assetScale: number;
   createdAt: Date;
+  debitAmount: bigint;
+  sentAmount: bigint;
+  quoteId?: string;
+  grantId?: string;
   cancelledAt?: Date;
   cancelReason?: string;
-  quoteId?: string;
-  debitAmount: bigint;
+  metadata?: Record<string, unknown>;
+}
+
+export interface ILocalSentPayment extends IBaseSentPayment {
+  destination: 'LOCAL';
+  /** Computed at creation, so never unknown. */
   receiveAmount: bigint;
-  sentAmount: bigint;
+}
+
+export interface IRemoteSentPayment extends IBaseSentPayment {
+  destination: 'REMOTE';
+  /** The peer this payment routes through. */
+  peerId: string;
+  /** Null when the payment was created without a quote, which fixes only the debit side. */
+  receiveAmount: bigint | null;
+  /** Set when the payment is prepared. */
+  ledgerTransferId?: string;
+  /** Set when the payment is rejected or fails. */
+  failReason?: string;
+}
+
+/**
+ * A payment the domain operates on. `destination` is inherited from the parent
+ * intent and never changes, which is what makes it safe to discriminate on:
+ * there is no transition that could drop an arm's fields.
+ */
+export type ISentPayment = ILocalSentPayment | IRemoteSentPayment;
+
+export function isRemoteSentPayment(
+  payment: ISentPayment
+): payment is IRemoteSentPayment {
+  return payment.destination === 'REMOTE';
+}
+
+/**
+ * A payment as it is stored and read back out. Carries no `destination` — that
+ * is the parent intent's fact, supplied when the domain object is hydrated —
+ * so reads which do not need domain behaviour can use this shape directly.
+ */
+export interface IStoredSentPayment extends IBaseSentPayment {
+  peerId?: string;
+  receiveAmount: bigint | null;
   ledgerTransferId?: string;
   failReason?: string;
 }
@@ -106,7 +158,7 @@ export interface IPaymentIntent {
   inboundPayments: IInboundPayment[];
   destinationIlpAddress?: string;
   remoteUrl?: string;
-  peerId?: string;
+  metadata?: Record<string, unknown>;
 }
 
 export interface IWalletAddress {
@@ -146,7 +198,7 @@ export interface IRemotePaymentIntentDetails {
 }
 
 export interface IRemotePaymentIntentService {
-  fetchIncomingPayment(url: string): Promise<IRemotePaymentIntentDetails>;
+  fetchPaymentIntent(url: string): Promise<IRemotePaymentIntentDetails>;
 }
 
 export type FinalizedRemoteQuoteUpdate =
@@ -201,10 +253,15 @@ export interface IPaymentIntentRepository {
   fetchPaymentIntentsPage(
     opts: IPageOpts
   ): Promise<IPage<Omit<IPaymentIntent, 'sentPayments' | 'inboundPayments'>>>;
-  /** Keyset-paginated sent payments, filterable by senderWalletAddressId and/or paymentIntentId. */
+  /**
+   * Keyset-paginated sent payments, filterable by senderWalletAddressId and/or
+   * paymentIntentId. Returns stored rows rather than domain objects: this read
+   * does not join the parent intents, and nothing downstream of it invokes
+   * payment behaviour.
+   */
   fetchSentPaymentsPage(
     opts: IPageOpts & { paymentIntentId?: string }
-  ): Promise<IPage<ISentPayment>>;
+  ): Promise<IPage<IStoredSentPayment>>;
   storeQuotes(
     quoteUpdates: { quoteIds: string[]; paymentIntent: IPaymentIntent }[]
   ): Promise<void>;

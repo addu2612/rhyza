@@ -1,0 +1,30 @@
+meta {
+  name: Create Incoming Payment
+  type: http
+  seq: 3
+}
+
+post {
+  url: http://{{openPaymentsResourceServerUrl}}/incoming-payments
+  body: json
+  auth: none
+}
+
+body:json {
+  {
+    "walletAddress": "https://test.com/receiver",
+    "incomingAmount": {
+      "assetScale": 2,
+      "assetCode": "USD",
+      "value": "1000"
+    }
+  }
+}
+
+script:post-response {
+  const body = res.getBody();
+
+  if (body?.id) {
+    bru.setEnvVar("incomingPaymentId", body.id.split("/").pop());
+  }
+}

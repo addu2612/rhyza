@@ -1,0 +1,21 @@
+meta {
+  name: Quoteless Remote Payment
+  seq: 3
+}
+
+auth {
+  mode: inherit
+}
+
+docs {
+  Remote payment without a quote (fixed-send), end to end. Self-contained:
+  run the whole folder against the peered two-node stack — Setup is
+  idempotent (accepts already-exists), so reruns are fine.
+  
+  The receiver's intent is identified by its URL — no quote step means there
+  is no quote response to translate the URL into a local intent id, so Create
+  Payment takes `paymentIntentUrl` directly and returns the canonical
+  `paymentIntentId`. `debitAmount` is required (nothing else can fix an
+  amount) and the payment has no receive amount (`receiveAmount: null`) since
+  the receiver's conversion rate is unknown without a quote probe.
+}

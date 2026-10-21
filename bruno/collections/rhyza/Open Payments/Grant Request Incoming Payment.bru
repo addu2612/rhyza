@@ -1,0 +1,45 @@
+meta {
+  name: Grant Request Incoming Payment
+  type: http
+  seq: 2
+}
+
+post {
+  url: http://{{openPaymentsAuthServerUrl}}/
+  body: json
+  auth: none
+}
+
+body:json {
+  {
+    "access_token": {
+      "access": [
+        {
+          "type": "incoming-payment",
+          "actions": ["create", "read"]
+        }
+      ]
+    },
+    "client": { "jwk": {{clientPublicJwk}} }
+  }
+}
+
+script:pre-request {
+  const scripts = require('./scripts');
+  
+  await scripts.addSignatureHeaders();
+}
+
+script:post-response {
+  const body = res.getBody();
+  
+  if (body?.continue?.uri) {
+    bru.setVar("grantContinueUri", body.continue.uri);
+  }
+  if (body?.continue?.access_token?.value) {
+    bru.setVar("grantContinueToken", body.continue.access_token.value);
+  }
+  if (body?.access_token?.value) {
+    bru.setVar("accessTokenValue", body.access_token.value);
+  }
+}

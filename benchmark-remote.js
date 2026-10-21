@@ -22,12 +22,12 @@ const RECEIVER_WALLET_ADDRESS = 'test.com/receiver';
 const PEER_AUTH_TOKEN = 'local-peer-token';
 const PEER_A_TO_B = {
   id: '04978037-26b8-4b4d-854a-278ed7548959',
-  ilpStaticAddress: 'private.rafiki.b',
+  ilpStaticAddress: 'private.rhyza.b',
   endpoint: 'http://ilp-connector-service-b:4000/ilp'
 };
 const PEER_B_TO_A = {
   id: '9f3c1e2a-4b5d-4c6e-8a7f-1b2c3d4e5f60',
-  ilpStaticAddress: 'private.rafiki.a',
+  ilpStaticAddress: 'private.rhyza.a',
   endpoint: 'http://ilp-connector-service:4000/ilp'
 };
 

@@ -131,7 +131,8 @@ describe('MongoDbPaymentIntentRepo keyset pagination', () => {
       createdAt: args.createdAt,
       debitAmount: 100n,
       receiveAmount: 100n,
-      sentAmount: 0n
+      sentAmount: 0n,
+      destination: 'LOCAL'
     };
   }
 
@@ -770,6 +771,65 @@ describe('MongoDbPaymentIntentRepo keyset pagination', () => {
         });
         assert.deepEqual(ids(afterFirst), [paymentId(3), paymentId(5)]);
       });
+    });
+  });
+
+  describe('hydrating payments', () => {
+    /**
+     * A payment row carries no destination -- that is the parent intent's
+     * fact, supplied on read. These cover the rows that cannot be hydrated
+     * because they contradict what the parent says.
+     */
+    async function insertRow(
+      intent: IPaymentIntent,
+      row: Record<string, unknown>
+    ): Promise<void> {
+      await repo.storeMany([intent]);
+      await db.collection('sentPayments').insertOne({
+        state: 'CREATED',
+        senderWalletAddress: 'test.com/page-sender',
+        senderWalletAddressId: SENDER_WALLET,
+        paymentIntentId: intent.id,
+        assetCode: 'USD',
+        assetScale: 2,
+        createdAt: new Date(T0),
+        debitAmount: 100n,
+        sentAmount: 0n,
+        ...row
+      });
+    }
+
+    test('a remote intent whose payment row has no peerId is rejected', async () => {
+      const intent: IPaymentIntent = {
+        ...makeIntent({
+          id: randomUUID(),
+          walletAddressId: RECEIVER_WALLET,
+          createdAt: new Date(T0)
+        }),
+        destination: 'REMOTE',
+        receiverWalletAddressId: undefined,
+        destinationIlpAddress: 'g.peer.123'
+      };
+      await insertRow(intent, { id: randomUUID(), receiveAmount: 100n });
+
+      await assert.rejects(
+        () => repo.fetchByIdsWithPayments([intent.id]),
+        /has no peerId/
+      );
+    });
+
+    test('a local intent whose payment row has a null receiveAmount is rejected', async () => {
+      const intent = makeIntent({
+        id: randomUUID(),
+        walletAddressId: RECEIVER_WALLET,
+        createdAt: new Date(T0)
+      });
+      await insertRow(intent, { id: randomUUID(), receiveAmount: null });
+
+      await assert.rejects(
+        () => repo.fetchByIdsWithPayments([intent.id]),
+        /has no receiveAmount/
+      );
     });
   });
 });

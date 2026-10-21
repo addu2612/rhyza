@@ -1,7 +1,7 @@
 openapi: 3.1.0
 info:
   title: Rhyza Admin API
-  version: 0.0.7
+  version: 0.0.15
   license:
     name: ISC
     identifier: ISC
@@ -24,14 +24,17 @@ tags:
     x-displayName: Peers
   - name: liquidity
     x-displayName: Liquidity
+  - name: grants
+    x-displayName: Grants
+  - name: rates
+    x-displayName: Rates
 paths:
   /peers:
     post:
       summary: Create Peer
       description: >-
-        Create a new ILP peer. Creates the peer in both PAL (asset,
-        settlement, static ILP address) and ILP (connector transport config)
-        with the same peer id.
+        Create a new ILP peer with its asset, settlement and static ILP address,
+        and its ILP connector transport configuration.
       tags:
         - peers
       operationId: createPeer
@@ -51,8 +54,8 @@ paths:
                 $ref: '#/components/schemas/ErrorResponse'
         '502':
           description: >-
-            Peer was created in PAL but ILP connector configuration failed;
-            the PAL peer has been deactivated. Retry the request.
+            The peer was created but its ILP connector configuration failed,
+            so the peer has been deactivated. Retry the request.
           content:
             application/json:
               schema:
@@ -64,6 +67,38 @@ paths:
           application/json:
             schema:
               $ref: '#/components/schemas/PeerCreate'
+  /peers/{id}/deactivate:
+    post:
+      summary: Deactivate Peer
+      description: >-
+        Deactivate a peer. The ILP connector stops using it once the
+        deactivation takes effect. Deactivating a peer that is already
+        inactive returns 409.
+      tags:
+        - peers
+      operationId: deactivatePeer
+      parameters:
+        - name: id
+          in: path
+          required: true
+          description: The id of the peer.
+          schema:
+            type: string
+      responses:
+        '204':
+          description: The peer is deactivated.
+        '404':
+          description: Peer not found.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '409':
+          description: The peer is already inactive.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
   /assets:
     post:
       summary: Create Asset
@@ -93,6 +128,20 @@ paths:
           application/json:
             schema:
               $ref: '#/components/schemas/AssetCreate'
+    get:
+      summary: Get Assets
+      description: Fetch every asset. When the instance has no assets, `assets` is an empty array.
+      tags:
+        - assets
+      operationId: getAssets
+      parameters: []
+      responses:
+        '200':
+          description: The request has succeeded.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AssetsResponse'
   /wallet-addresses:
     post:
       summary: Create Wallet Address
@@ -247,7 +296,7 @@ paths:
         - name: id
           in: path
           required: true
-          description: The PAL identifier of the wallet address.
+          description: The identifier of the wallet address.
           schema:
             type: string
         - name: keyId
@@ -455,7 +504,10 @@ paths:
         content:
           application/json:
             schema:
-              $ref: '#/components/schemas/QuoteCreate'
+              type: object
+              oneOf:
+                - $ref: '#/components/schemas/QuoteCreateFromPaymentIntentId'
+                - $ref: '#/components/schemas/QuoteCreateFromPaymentIntentUrl'
   /payments:
     get:
       summary: List Payments
@@ -553,7 +605,10 @@ paths:
         content:
           application/json:
             schema:
-              $ref: '#/components/schemas/PaymentCreate'
+              type: object
+              oneOf:
+                - $ref: '#/components/schemas/PaymentCreateFromPaymentIntentId'
+                - $ref: '#/components/schemas/PaymentCreateFromPaymentIntentUrl'
   /payment-intents/{intentId}/payments/{id}/approve:
     post:
       summary: Approve Payment
@@ -667,9 +722,7 @@ paths:
     post:
       summary: Deposit Liquidity
       description: >-
-        Deposit liquidity so the node can send payments. Debits the asset system
-        account and credits the peer's ASE liquidity account by producing a
-        ledger DepositToAse command. This is request-response style, returns 200 when complete.
+        Add funds to a peer's liquidity account so ILP payments can be sent to them.
       tags:
         - liquidity
       operationId: Liquidity_deposit
@@ -693,7 +746,7 @@ paths:
                   example: USD
                 peerId:
                   type: string
-                  description: Peer whose ASE liquidity account is credited.
+                  description: The identifier of the peer.
                 amount:
                   type: integer
                   description: >-
@@ -727,8 +780,135 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/ErrorResponse'
+  /grant/{id}:
+    get:
+      summary: Get grant
+      description: >-
+        Get the grant associated with the provided id.
+      tags:
+        - grants
+      operationId: getGrant
+      parameters:
+        - name: id
+          in: path
+          description: Unique identifier for the grant
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: The request has succeeded.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Grant'
+        '404':
+          description: Grant not found.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+    post:
+      summary: Revoke grant
+      description: >-
+        Revoke the grant associated with the provided id.
+      tags:
+        - payments
+      operationId: revokeGrant
+      parameters:
+        - name: id
+          in: path
+          description: Unique identifier for the grant
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: The request has succeeded.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Grant'
+        '404':
+          description: Grant not found.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '409':
+          description: The grant could not be revoked.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+  /rates:
+    post:
+      summary: Set Exchange Rate
+      description: >-
+        Store an exchange rate for payments between wallet addresses on this Rhyza instance, 
+        or a peer's rate used for payments sent to or received from that peer.
+      tags:
+        - rates
+      operationId: setFxRate
+      parameters: []
+      requestBody:
+        description: Exchange rate to store
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/FxRateSet'
+      responses:
+        '204':
+          description: The exchange rate has been stored.
+        '400':
+          description: >-
+            sourceAssetCode, destinationAssetCode, rate, or rateTtlSecs is missing,
+            or rate or rateTtlSecs is not greater than 0.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '500':
+          description: Failed to set the exchange rate.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
 components:
   schemas:
+    FxRateSet:
+      type: object
+      description: Exchange rate to store.
+      required:
+        - sourceAssetCode
+        - destinationAssetCode
+        - rate
+        - peerId
+        - rateTtlSecs
+      properties:
+        sourceAssetCode:
+          type: string
+          description: Asset code the rate converts from.
+          example: USD
+        destinationAssetCode:
+          type: string
+          description: Asset code the rate converts to.
+          example: EUR
+        rate:
+          type: number
+          exclusiveMinimum: 0
+          description: Units of destination asset per one unit of source asset.
+          example: 0.92
+        peerId:
+          type: ['string', 'null']
+          description: >-
+            Peer whose rate this is. Null stores an intra-FSP rate.
+        rateTtlSecs:
+          type: number
+          exclusiveMinimum: 0
+          description: Seconds until the stored rate expires.
+          example: 60
     ErrorResponse:
       type: object
       description: Response schema for API errors.
@@ -760,6 +940,29 @@ components:
         code:
           type: string
           description: The unique code of the created asset.
+    Asset:
+      type: object
+      description: An asset known to the instance.
+      required:
+        - code
+        - scale
+      properties:
+        code:
+          type: string
+          description: The asset code (e.g., "USD", "EUR", "BTC").
+        scale:
+          type: number
+          description: The number of decimal places for the asset.
+    AssetsResponse:
+      type: object
+      description: Response schema for fetching assets.
+      required:
+        - assets
+      properties:
+        assets:
+          type: array
+          items:
+            $ref: '#/components/schemas/Asset'
     PeerHttpOutgoing:
       type: object
       description: Connector settings for sending ILP packets to this peer.
@@ -803,7 +1006,7 @@ components:
       properties:
         id:
           type: string
-          description: The unique identifier for the peer, shared by PAL and ILP.
+          description: The unique identifier for the peer.
         name:
           type: string
           description: A human-readable name for the peer.
@@ -934,8 +1137,9 @@ components:
           format: date-time
           description: The date and time when the payment intent expires.
         metadata:
-          type: string
+          type: object
           description: Additional arbitrary data associated with the payment intent.
+          additionalProperties: true
     PaymentIntentCreateResponse:
       type: object
       description: Response schema after creating a payment intent.
@@ -1018,9 +1222,12 @@ components:
         destinationIlpAddress:
           type: string
           description: The ILP address of the payment intent.
-    QuoteCreate:
+    QuoteCreateBase:
       type: object
-      description: Schema for creating a payment quote.
+      description: >-
+        Fields common to both ways of creating a quote. Not used directly as a
+        request body — see QuoteCreateFromPaymentIntentId and
+        QuoteCreateFromPaymentIntentUrl.
       required:
         - walletAddress
       properties:
@@ -1030,18 +1237,41 @@ components:
         walletAddress:
           type: string
           description: The sender's wallet address.
-        paymentIntentId:
-          type: string
-          description: The ID of the payment intent this quote is for.
-        paymentIntentUrl:
-          type: string
-          description: The URL of the payment intent this quote is for.
         debitAmount:
           type: string
           description: The amount to be debited from the sender's account.
         receiveAmount:
           type: string
           description: The amount to be received by the recipient.
+    QuoteCreateFromPaymentIntentId:
+      description: >-
+        Quotes a payment intent this instance already holds, named by its local
+        id.
+      allOf:
+        - $ref: '#/components/schemas/QuoteCreateBase'
+        - type: object
+          required:
+            - paymentIntentId
+          properties:
+            paymentIntentId:
+              type: string
+              description: The ID of the payment intent this quote is for.
+    QuoteCreateFromPaymentIntentUrl:
+      description: >-
+        Quotes a payment intent named by its URL. The intent may be held by
+        another instance, in which case it is imported on first use; the canonical
+        local id is returned as paymentIntentId.
+      allOf:
+        - $ref: '#/components/schemas/QuoteCreateBase'
+        - type: object
+          required:
+            - paymentIntentUrl
+          properties:
+            paymentIntentUrl:
+              type: string
+              format: uri
+              description: >-
+                The URL of the payment intent this quote is for.
     Quote:
       type: object
       description: Represents a payment quote with estimated amounts and exchange rates.
@@ -1080,12 +1310,14 @@ components:
         exchangeRate:
           type: number
           description: The exchange rate of quote.
-    PaymentCreate:
+    PaymentCreateBase:
       type: object
-      description: Schema for creating a new payment.
+      description: >-
+        Fields common to both ways of creating a payment. Not used directly as
+        a request body — see PaymentCreateFromIntentId and
+        PaymentCreateFromIntentUrl.
       required:
         - walletAddress
-        - paymentIntentId
       properties:
         id:
           type: string
@@ -1093,15 +1325,45 @@ components:
         walletAddress:
           type: string
           description: The sender's wallet address.
-        paymentIntentId:
-          type: string
-          description: The ID of the payment intent being paid.
         quoteId:
           type: string
           description: The ID of the quote used for this payment.
         debitAmount:
           type: number
           description: The amount to debit from the sender.
+        metadata:
+          type: object
+          description: Additional arbitrary data associated with the payment.
+          additionalProperties: true
+    PaymentCreateFromPaymentIntentId:
+      description: >-
+        Creates a payment against a payment intent this instance already holds,
+        named by its local id.
+      allOf:
+        - $ref: '#/components/schemas/PaymentCreateBase'
+        - type: object
+          required:
+            - paymentIntentId
+          properties:
+            paymentIntentId:
+              type: string
+              description: The ID of the payment intent being paid.
+    PaymentCreateFromPaymentIntentUrl:
+      description: >-
+        Creates a payment against a payment intent named by its URL. The
+        intent may be held by another instance, in which case it is imported on
+        first use; the canonical local id is returned as paymentIntentId.
+      allOf:
+        - $ref: '#/components/schemas/PaymentCreateBase'
+        - type: object
+          required:
+            - paymentIntentUrl
+          properties:
+            paymentIntentUrl:
+              type: string
+              format: uri
+              description: >-
+                The URL of the incoming payment being paid.
     PaymentCreateResponse:
       type: object
       description: Response schema after initiating a payment.
@@ -1155,8 +1417,13 @@ components:
           $ref: '#/components/schemas/Amount'
           description: The amount debited from the sender, in the sender-side asset.
         receiveAmount:
-          $ref: '#/components/schemas/Amount'
-          description: The amount received by the destination, in the receive-side asset.
+          oneOf:
+            - $ref: '#/components/schemas/Amount'
+            - type: 'null'
+          description: >-
+            The amount received by the destination, in the receive-side asset.
+            Null for a payment created without a quote, which fixes only the
+            debit side.
         sentAmount:
           $ref: '#/components/schemas/Amount'
           description: The total amount sent so far, in the sender-side asset.
@@ -1228,3 +1495,177 @@ components:
         - COMPLETED
         - CANCELLED
         - FAILED
+    Grant:
+      type: object
+      description: Represents an Open Payments grant.
+      required:
+        - id
+        - state
+      properties:
+        id:
+          type: string
+          description: The unique identifier for the grant.
+        interactionNonce:
+          type: string
+          description: The nonce used by the client to verify an interaction hash.
+        state:
+          $ref: '#/components/schemas/GrantState'
+          description: The current state of the grant.
+        client:
+          $ref: '#/components/schemas/Client'
+          description: The client's wallet address, or a JWK if directed identity was used.
+        subjectIds:
+          type: array
+          description: The subject identifiers requested by the client.
+          items:
+            $ref: '#/components/schemas/SubjectId'
+        accesses:
+          type: array
+          description: The accesses requested in the grant.
+          items:
+            $ref: '#/components/schemas/AccessItem'
+        interaction:
+          $ref: '#/components/schemas/Interaction'
+          description: The grant's interaction session.
+    GrantState:
+      type: string
+      description: The current state of a grant.
+      enum:
+        - PROCESSING
+        - PENDING
+        - APPROVED
+        - ISSUED
+        - REJECTED
+        - REVOKED
+    Client:
+      description: Client identification for grant requests.
+      oneOf:
+        - title: Wallet address object
+          type: object
+          required: [walletAddress]
+          properties:
+            walletAddress:
+              type: string
+              format: uri
+              description: Wallet address of the client instance that is making this request.
+          additionalProperties: false
+        - title: Directed identity (JWK)
+          type: object
+          required: [jwk]
+          properties:
+            jwk:
+              $ref: '#/components/schemas/json-web-key'
+          additionalProperties: false
+        - title: Wallet address string (deprecated)
+          type: string
+          format: uri
+          description: 'DEPRECATED: This string format of the client wallet address is maintained only for backwards compatibility. Migrate to the object form with `jwk` or `walletAddress`.'
+          deprecated: true
+    json-web-key:
+      type: object
+      properties:
+        kid:
+          type: string
+        alg:
+          type: string
+          description: 'The cryptographic algorithm family used with the key. The only allowed value is `EdDSA`. '
+          enum:
+            - EdDSA
+        use:
+          type: string
+          enum:
+            - sig
+        kty:
+          type: string
+          enum:
+            - OKP
+        crv:
+          description: 'The cryptographic curve used with the key. This parameter identifies the elliptic curve (for EC keys) or the Edwards curve (for OKP keys). The only allowed value is `Ed25519`.'
+          type: string
+          enum:
+            - Ed25519
+        x:
+          type: string
+          pattern: '^[a-zA-Z0-9-_]+$'
+          description: The base64 url-encoded public key.
+      required:
+        - kid
+        - alg
+        - kty
+        - crv
+        - x
+      title: Ed25519 Public Key
+      description: A JWK representation of an Ed25519 Public Key
+      examples:
+        - kid: key-1
+          alg: EdDSA
+          use: sig
+          kty: OKP
+          crv: Ed25519
+          x: 11qYAYKxCrfVS_7TyWQHOg7hcvPapiMlrwIaaPcHURo
+    AccessItem:
+      type: object
+      description: A single access item requested by a grant.
+      required:
+        - type
+        - actions
+      properties:
+        type:
+          type: string
+          description: The type of resource being requested.
+        actions:
+          type: array
+          items:
+            type: string
+        identifier:
+          type: string
+          description: The wallet address URL the access is referring to, if applicable.
+        limits:
+          $ref: '#/components/schemas/AccessLimits'
+    AccessLimits:
+      type: object
+      description: Limits imposed on an access item requested by a grant.
+      properties:
+        receiver:
+          type: string
+        interval:
+          type: string
+        debitAmount:
+          $ref: '#/components/schemas/Amount'
+        receiveAmount:
+          $ref: '#/components/schemas/Amount'
+    SubjectId:
+      type: object
+      description: A single subject id requested by a grant.
+      required:
+        - format
+        - id
+      properties:
+        format:
+          type: string
+        id:
+          type: string
+    Interaction:
+      type: object
+      description: An interaction on a grant.
+      required:
+        - interactRef
+        - state
+      properties:
+        interactRef:
+          type: string
+          description: The reference identifying this interaction.
+        clientNonce:
+          type: string
+          description: The nonce the client provided when starting the interaction.
+        state:
+          type: string
+          description: The current state of the interaction.
+          enum:
+            - PENDING
+            - APPROVED
+            - REJECTED
+        expiresAt:
+          type: integer
+          format: int64
+          description: When the interaction expires, as a Unix timestamp.

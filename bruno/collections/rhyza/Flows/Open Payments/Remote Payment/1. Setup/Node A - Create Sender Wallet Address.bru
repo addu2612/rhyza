@@ -1,0 +1,32 @@
+meta {
+  name: Node A - Create Sender Wallet Address
+  type: http
+  seq: 2
+}
+
+post {
+  url: http://{{adminA}}/wallet-addresses
+  body: json
+  auth: none
+}
+
+body:json {
+  {
+    "assetCode": "USD",
+    "address": "test.com/sender",
+    "publicName": "Sender (Node A)"
+  }
+}
+
+script:post-response {
+  const body = res.getBody();
+  if (body?.address) {
+    bru.setVar("senderWalletAddress", body.address);
+  }
+}
+
+tests {
+  test("created or already exists", function () {
+    expect([201, 409]).to.include(res.getStatus());
+  });
+}

@@ -210,7 +210,7 @@ describe('IlpCommandHandler — peer creation/update', () => {
           peerId: 'peer-1',
           http: {
             outgoing: {
-              endpoint: 'https://peer.example/ilp-v2',
+              endpoint: 'https://peer.example/ilp',
               authToken: 't2'
             }
           },
@@ -226,7 +226,7 @@ describe('IlpCommandHandler — peer creation/update', () => {
     assert.ok(event, 'expected a ILPPeerUpdatedEvent');
     assert.equal(
       event.payload.http.outgoing.endpoint,
-      'https://peer.example/ilp-v2'
+      'https://peer.example/ilp'
     );
     assert.equal(event.payload.isActive, false);
     assert.equal(event.requestId, 'req-update-1');

@@ -1,5 +1,6 @@
 import { describe, it } from 'node:test';
 import assert from 'node:assert/strict';
+import { isRemoteSentPayment } from '../../src/payment-intent/interfaces';
 
 import { PaymentIntent } from '../../src/payment-intent/entity';
 import {
@@ -694,6 +695,120 @@ describe('PaymentIntent Entity', () => {
   });
 
   describe('addLocalPayment', () => {
+    it('throws PaymentIntentInvalidState if destination is REMOTE', () => {
+      const paymentIntent = PaymentIntent.create(
+        crypto.randomUUID(),
+        crypto.randomUUID(),
+        'receiver',
+        PaymentIntentDestination.REMOTE,
+        'USD',
+        2,
+        null,
+        100n
+      );
+
+      assert.throws(
+        () =>
+          paymentIntent.addLocalPayment({
+            id: crypto.randomUUID(),
+            senderWalletAddress: {
+              id: crypto.randomUUID(),
+              address: 'sender',
+              assetCode: 'USD',
+              assetScale: 2
+            },
+            exchangeRate: 1
+          }),
+        PaymentIntentInvalidState
+      );
+    });
+
+    it('rejects a remote transition on a local payment', () => {
+      // only reachable from inconsistent stored data: a LOCAL payment hydrated
+      // onto a REMOTE intent
+      const paymentIntentId = crypto.randomUUID();
+      const paymentId = crypto.randomUUID();
+      const paymentIntent = PaymentIntent.fromObject({
+        id: paymentIntentId,
+        receiverWalletAddress: 'remote.domain.com/alice',
+        destination: PaymentIntentDestination.REMOTE,
+        assetCode: 'USD',
+        assetScale: 2,
+        incomingAmount: null,
+        receivedAmount: 0n,
+        state: 'CREATED',
+        createdAt: new Date(),
+        expiresAt: new Date(Date.now() + 60_000),
+        destinationIlpAddress: 'g.peer.123',
+        quotes: [],
+        inboundPayments: [],
+        sentPayments: [
+          {
+            id: paymentId,
+            destination: 'LOCAL',
+            state: 'CREATED',
+            paymentIntentId,
+            senderWalletAddress: 'sender',
+            senderWalletAddressId: crypto.randomUUID(),
+            assetCode: 'USD',
+            assetScale: 2,
+            createdAt: new Date(),
+            debitAmount: 500n,
+            receiveAmount: 100n,
+            sentAmount: 0n
+          }
+        ]
+      });
+
+      assert.throws(
+        () => paymentIntent.approveRemotePaymentSend({ id: paymentId }),
+        PaymentInvalidStateError
+      );
+    });
+
+    it('rejects local settlement of a remote payment', () => {
+      // the mirror case: a REMOTE payment hydrated onto a LOCAL intent
+      const paymentIntentId = crypto.randomUUID();
+      const paymentId = crypto.randomUUID();
+      const paymentIntent = PaymentIntent.fromObject({
+        id: paymentIntentId,
+        receiverWalletAddressId: crypto.randomUUID(),
+        receiverWalletAddress: 'domain.com/alice',
+        destination: PaymentIntentDestination.LOCAL,
+        assetCode: 'USD',
+        assetScale: 2,
+        incomingAmount: null,
+        receivedAmount: 0n,
+        state: 'CREATED',
+        createdAt: new Date(),
+        expiresAt: new Date(Date.now() + 60_000),
+        quotes: [],
+        inboundPayments: [],
+        sentPayments: [
+          {
+            id: paymentId,
+            destination: 'REMOTE',
+            peerId: 'peer-1',
+            state: 'CREATED',
+            paymentIntentId,
+            senderWalletAddress: 'sender',
+            senderWalletAddressId: crypto.randomUUID(),
+            assetCode: 'USD',
+            assetScale: 2,
+            createdAt: new Date(),
+            debitAmount: 500n,
+            receiveAmount: 100n,
+            sentAmount: 0n
+          }
+        ]
+      });
+
+      assert.throws(
+        () => paymentIntent.completeLocalPayment({ id: paymentId }),
+        PaymentInvalidStateError
+      );
+    });
+
     it('adds a payment using quoteId', () => {
       const paymentIntent = PaymentIntent.create(
         crypto.randomUUID(),
@@ -723,6 +838,7 @@ describe('PaymentIntent Entity', () => {
       paymentIntent.addLocalPayment({
         id: paymentId,
         quoteId,
+        grantId: 'grant-1',
         exchangeRate: 1, // won't be used since quoteId is provided
         senderWalletAddress: {
           id: senderWalletAddressId,
@@ -736,6 +852,7 @@ describe('PaymentIntent Entity', () => {
       const payment = paymentIntent.sentPayments[0];
       assert.equal(payment.id, paymentId);
       assert.equal(payment.quoteId, quoteId);
+      assert.equal(payment.grantId, 'grant-1');
       assert.equal(payment.debitAmount, 200n);
       assert.equal(payment.receiveAmount, 100n);
     });
@@ -904,6 +1021,7 @@ describe('PaymentIntent Entity', () => {
         inboundPayments: [],
         sentPayments: [
           {
+            destination: 'LOCAL',
             id: crypto.randomUUID(),
             state: 'COMPLETED',
             quoteId,
@@ -1310,6 +1428,13 @@ describe('PaymentIntent Entity', () => {
               debitAmount,
               receiveAmount,
               exchangeRate: Number(receiveAmount) / Number(debitAmount),
+              route: {
+                peerId: 'peer-1',
+                peerAssetCode: 'USD',
+                peerAssetScale: 2,
+                sourceAmount: 100n,
+                senderAssetCode: 'USD'
+              },
               expiresAt:
                 overrides?.quoteExpiresAt ?? new Date(Date.now() + 60_000)
             }
@@ -1320,39 +1445,34 @@ describe('PaymentIntent Entity', () => {
       };
     }
 
-    it('adds a payment using amounts from the completed quote', () => {
-      const {
-        paymentIntent,
-        quoteId,
-        senderWalletAddressId,
-        debitAmount,
-        receiveAmount
-      } = makeRemoteIntentWithCompletedQuote();
+    it('adds a quoteless payment with a debitAmount and binds the peer', () => {
+      const { paymentIntent, senderWalletAddressId } =
+        makeRemoteIntentWithCompletedQuote();
       const paymentId = crypto.randomUUID();
 
       const payment = paymentIntent.addRemotePayment({
         id: paymentId,
-        quoteId,
         senderWalletAddress: {
           id: senderWalletAddressId,
           address: 'sender',
           assetCode: 'USD',
           assetScale: 2
-        }
+        },
+        debitAmount: 500n,
+        peerId: 'peer-1'
       });
 
       assert.equal(paymentIntent.sentPayments.length, 1);
       assert.equal(payment.id, paymentId);
       assert.equal(payment.state, 'CREATED');
-      assert.equal(payment.quoteId, quoteId);
-      assert.equal(payment.debitAmount, debitAmount);
-      assert.equal(payment.receiveAmount, receiveAmount);
+      assert.equal(payment.quoteId, undefined);
+      assert.equal(payment.debitAmount, 500n);
+      assert.equal(payment.receiveAmount, null);
       assert.equal(payment.sentAmount, 0n);
-      assert.equal(payment.senderWalletAddressId, senderWalletAddressId);
-      assert.equal(payment.paymentIntentId, paymentIntent.id);
+      assert.equal(payment.peerId, 'peer-1');
     });
 
-    it('throws PaymentIntentInvalidState if destination is LOCAL', () => {
+    it('applies the shared intent guards on the quoteless path', () => {
       const paymentIntent = PaymentIntent.create(
         crypto.randomUUID(),
         crypto.randomUUID(),
@@ -1367,13 +1487,14 @@ describe('PaymentIntent Entity', () => {
         () => {
           paymentIntent.addRemotePayment({
             id: crypto.randomUUID(),
-            quoteId: crypto.randomUUID(),
             senderWalletAddress: {
               id: crypto.randomUUID(),
               address: 'sender',
               assetCode: 'USD',
               assetScale: 2
-            }
+            },
+            debitAmount: 500n,
+            peerId: 'peer-1'
           });
         },
         (err: Error) => {
@@ -1384,253 +1505,348 @@ describe('PaymentIntent Entity', () => {
       );
     });
 
-    it('throws PaymentIntentInvalidState if intent is not CREATED', () => {
-      const { paymentIntent, quoteId, senderWalletAddressId } =
-        makeRemoteIntentWithCompletedQuote({ intentState: 'COMPLETED' });
+    describe('addRemotePaymentFromQuote', () => {
+      it('adds a payment using amounts from the completed quote', () => {
+        const {
+          paymentIntent,
+          quoteId,
+          senderWalletAddressId,
+          debitAmount,
+          receiveAmount
+        } = makeRemoteIntentWithCompletedQuote();
+        const paymentId = crypto.randomUUID();
 
-      assert.throws(
-        () => {
-          paymentIntent.addRemotePayment({
-            id: crypto.randomUUID(),
-            quoteId,
-            senderWalletAddress: {
-              id: senderWalletAddressId,
-              address: 'sender',
-              assetCode: 'USD',
-              assetScale: 2
-            }
-          });
-        },
-        (err: Error) => {
-          assert(err instanceof PaymentIntentInvalidState);
-          assert.match(err.message, /invalid state/);
-          return true;
-        }
-      );
-    });
-
-    it('throws PaymentIntentExpired if intent is expired', () => {
-      const { paymentIntent, quoteId, senderWalletAddressId } =
-        makeRemoteIntentWithCompletedQuote({
-          intentExpiresAt: new Date(Date.now() - 1000)
-        });
-
-      assert.throws(
-        () => {
-          paymentIntent.addRemotePayment({
-            id: crypto.randomUUID(),
-            quoteId,
-            senderWalletAddress: {
-              id: senderWalletAddressId,
-              address: 'sender',
-              assetCode: 'USD',
-              assetScale: 2
-            }
-          });
-        },
-        (err: Error) => {
-          assert(err instanceof PaymentIntentExpired);
-          return true;
-        }
-      );
-    });
-
-    it('throws InvalidPaymentIdError on duplicate payment id', () => {
-      const { paymentIntent, quoteId, senderWalletAddressId } =
-        makeRemoteIntentWithCompletedQuote();
-      const paymentId = crypto.randomUUID();
-      const args = {
-        id: paymentId,
-        quoteId,
-        senderWalletAddress: {
-          id: senderWalletAddressId,
-          address: 'sender',
-          assetCode: 'USD',
-          assetScale: 2
-        }
-      };
-
-      paymentIntent.addRemotePayment(args);
-
-      assert.throws(
-        () => paymentIntent.addRemotePayment(args),
-        (err: Error) => {
-          assert(err instanceof InvalidPaymentIdError);
-          assert.match(err.message, /Duplicate payment id/);
-          return true;
-        }
-      );
-    });
-
-    it('throws InvalidQuoteIdError if quote not found', () => {
-      const { paymentIntent, senderWalletAddressId } =
-        makeRemoteIntentWithCompletedQuote();
-
-      assert.throws(
-        () => {
-          paymentIntent.addRemotePayment({
-            id: crypto.randomUUID(),
-            quoteId: crypto.randomUUID(),
-            senderWalletAddress: {
-              id: senderWalletAddressId,
-              address: 'sender',
-              assetCode: 'USD',
-              assetScale: 2
-            }
-          });
-        },
-        (err: Error) => {
-          assert(err instanceof InvalidQuoteIdError);
-          assert.match(err.message, /Could not find/);
-          return true;
-        }
-      );
-    });
-
-    it('throws InvalidQuoteStateError if sender wallet address does not match', () => {
-      const { paymentIntent, quoteId } = makeRemoteIntentWithCompletedQuote();
-
-      assert.throws(
-        () => {
-          paymentIntent.addRemotePayment({
-            id: crypto.randomUUID(),
-            quoteId,
-            senderWalletAddress: {
-              id: crypto.randomUUID(),
-              address: 'other-sender',
-              assetCode: 'USD',
-              assetScale: 2
-            }
-          });
-        },
-        (err: Error) => {
-          assert(err instanceof InvalidQuoteStateError);
-          assert.match(err.message, /Invalid sender/);
-          return true;
-        }
-      );
-    });
-
-    it('throws InvalidQuoteStateError if quote is not COMPLETED', () => {
-      const paymentIntentId = crypto.randomUUID();
-      const quoteId = crypto.randomUUID();
-      const senderWalletAddressId = crypto.randomUUID();
-      const paymentIntent = PaymentIntent.fromObject({
-        id: paymentIntentId,
-        receiverWalletAddress: 'remote.domain.com/alice',
-        destination: PaymentIntentDestination.REMOTE,
-        assetCode: 'USD',
-        assetScale: 2,
-        incomingAmount: null,
-        receivedAmount: 0n,
-        state: 'CREATED',
-        createdAt: new Date(),
-        expiresAt: new Date(Date.now() + 60_000),
-        destinationIlpAddress: 'g.peer.123',
-        quotes: [
-          {
-            id: quoteId,
-            state: 'PENDING',
-            senderWalletAddress: 'sender',
-            senderWalletAddressId,
-            createdAt: new Date()
-          }
-        ],
-        sentPayments: [],
-        inboundPayments: []
-      });
-
-      assert.throws(
-        () => {
-          paymentIntent.addRemotePayment({
-            id: crypto.randomUUID(),
-            quoteId,
-            senderWalletAddress: {
-              id: senderWalletAddressId,
-              address: 'sender',
-              assetCode: 'USD',
-              assetScale: 2
-            }
-          });
-        },
-        (err: Error) => {
-          assert(err instanceof InvalidQuoteStateError);
-          assert.match(err.message, /not completed/);
-          return true;
-        }
-      );
-    });
-
-    it('throws QuoteExpiredError if quote is expired', () => {
-      const { paymentIntent, quoteId, senderWalletAddressId } =
-        makeRemoteIntentWithCompletedQuote({
-          quoteExpiresAt: new Date(Date.now() - 1000)
-        });
-
-      assert.throws(
-        () => {
-          paymentIntent.addRemotePayment({
-            id: crypto.randomUUID(),
-            quoteId,
-            senderWalletAddress: {
-              id: senderWalletAddressId,
-              address: 'sender',
-              assetCode: 'USD',
-              assetScale: 2
-            }
-          });
-        },
-        (err: Error) => {
-          assert(err instanceof QuoteExpiredError);
-          return true;
-        }
-      );
-    });
-
-    it('throws InvalidQuoteStateError if quote already consumed', () => {
-      const paymentIntentId = crypto.randomUUID();
-      const quoteId = crypto.randomUUID();
-      const senderWalletAddressId = crypto.randomUUID();
-      const { paymentIntent } = makeRemoteIntentWithCompletedQuote({
-        quoteId,
-        senderWalletAddressId,
-        extraPayments: [
-          {
-            id: crypto.randomUUID(),
-            state: 'CREATED',
-            quoteId,
-            senderWalletAddress: 'sender',
-            senderWalletAddressId,
-            paymentIntentId,
+        const payment = paymentIntent.addRemotePaymentFromQuote({
+          id: paymentId,
+          quoteId,
+          senderWalletAddress: {
+            id: senderWalletAddressId,
+            address: 'sender',
             assetCode: 'USD',
-            assetScale: 2,
-            createdAt: new Date(),
-            debitAmount: 500n,
-            receiveAmount: 100n,
-            sentAmount: 0n
+            assetScale: 2
           }
-        ]
+        });
+
+        assert.equal(paymentIntent.sentPayments.length, 1);
+        assert.equal(payment.id, paymentId);
+        assert.equal(payment.state, 'CREATED');
+        assert.equal(payment.quoteId, quoteId);
+        assert.equal(payment.debitAmount, debitAmount);
+        assert.equal(payment.receiveAmount, receiveAmount);
+        assert.equal(payment.sentAmount, 0n);
+        assert.equal(payment.senderWalletAddressId, senderWalletAddressId);
+        assert.equal(payment.paymentIntentId, paymentIntent.id);
+        assert.equal(payment.peerId, 'peer-1');
       });
 
-      assert.throws(
-        () => {
-          paymentIntent.addRemotePayment({
-            id: crypto.randomUUID(),
-            quoteId,
-            senderWalletAddress: {
-              id: senderWalletAddressId,
-              address: 'sender',
-              assetCode: 'USD',
-              assetScale: 2
-            }
+      it('throws if the completed quote has no route', () => {
+        // a completed remote quote always routed through a peer, so this only
+        // happens when the quote was stored or read lossily
+        const { paymentIntent, quoteId, senderWalletAddressId } =
+          makeRemoteIntentWithCompletedQuote();
+        const stripped = PaymentIntent.fromObject({
+          ...paymentIntent.toObject(),
+          quotes: paymentIntent.quotes.map((q) => ({ ...q, route: undefined }))
+        });
+
+        assert.throws(
+          () =>
+            stripped.addRemotePaymentFromQuote({
+              id: crypto.randomUUID(),
+              quoteId,
+              senderWalletAddress: {
+                id: senderWalletAddressId,
+                address: 'sender',
+                assetCode: 'USD',
+                assetScale: 2
+              }
+            }),
+          InvalidQuoteStateError
+        );
+      });
+
+      it('throws PaymentIntentInvalidState if destination is LOCAL', () => {
+        const paymentIntent = PaymentIntent.create(
+          crypto.randomUUID(),
+          crypto.randomUUID(),
+          'receiver',
+          PaymentIntentDestination.LOCAL,
+          'USD',
+          2,
+          null
+        );
+
+        assert.throws(
+          () => {
+            paymentIntent.addRemotePaymentFromQuote({
+              id: crypto.randomUUID(),
+              quoteId: crypto.randomUUID(),
+              senderWalletAddress: {
+                id: crypto.randomUUID(),
+                address: 'sender',
+                assetCode: 'USD',
+                assetScale: 2
+              }
+            });
+          },
+          (err: Error) => {
+            assert(err instanceof PaymentIntentInvalidState);
+            assert.match(err.message, /must be remote/);
+            return true;
+          }
+        );
+      });
+
+      it('throws PaymentIntentInvalidState if intent is not CREATED', () => {
+        const { paymentIntent, quoteId, senderWalletAddressId } =
+          makeRemoteIntentWithCompletedQuote({ intentState: 'COMPLETED' });
+
+        assert.throws(
+          () => {
+            paymentIntent.addRemotePaymentFromQuote({
+              id: crypto.randomUUID(),
+              quoteId,
+              senderWalletAddress: {
+                id: senderWalletAddressId,
+                address: 'sender',
+                assetCode: 'USD',
+                assetScale: 2
+              }
+            });
+          },
+          (err: Error) => {
+            assert(err instanceof PaymentIntentInvalidState);
+            assert.match(err.message, /invalid state/);
+            return true;
+          }
+        );
+      });
+
+      it('throws PaymentIntentExpired if intent is expired', () => {
+        const { paymentIntent, quoteId, senderWalletAddressId } =
+          makeRemoteIntentWithCompletedQuote({
+            intentExpiresAt: new Date(Date.now() - 1000)
           });
-        },
-        (err: Error) => {
-          assert(err instanceof InvalidQuoteStateError);
-          assert.match(err.message, /Already consumed quote/);
-          return true;
-        }
-      );
+
+        assert.throws(
+          () => {
+            paymentIntent.addRemotePaymentFromQuote({
+              id: crypto.randomUUID(),
+              quoteId,
+              senderWalletAddress: {
+                id: senderWalletAddressId,
+                address: 'sender',
+                assetCode: 'USD',
+                assetScale: 2
+              }
+            });
+          },
+          (err: Error) => {
+            assert(err instanceof PaymentIntentExpired);
+            return true;
+          }
+        );
+      });
+
+      it('throws InvalidPaymentIdError on duplicate payment id', () => {
+        const { paymentIntent, quoteId, senderWalletAddressId } =
+          makeRemoteIntentWithCompletedQuote();
+        const paymentId = crypto.randomUUID();
+        const args = {
+          id: paymentId,
+          quoteId,
+          senderWalletAddress: {
+            id: senderWalletAddressId,
+            address: 'sender',
+            assetCode: 'USD',
+            assetScale: 2
+          }
+        };
+
+        paymentIntent.addRemotePaymentFromQuote(args);
+
+        assert.throws(
+          () => paymentIntent.addRemotePaymentFromQuote(args),
+          (err: Error) => {
+            assert(err instanceof InvalidPaymentIdError);
+            assert.match(err.message, /Duplicate payment id/);
+            return true;
+          }
+        );
+      });
+
+      it('throws InvalidQuoteIdError if quote not found', () => {
+        const { paymentIntent, senderWalletAddressId } =
+          makeRemoteIntentWithCompletedQuote();
+
+        assert.throws(
+          () => {
+            paymentIntent.addRemotePaymentFromQuote({
+              id: crypto.randomUUID(),
+              quoteId: crypto.randomUUID(),
+              senderWalletAddress: {
+                id: senderWalletAddressId,
+                address: 'sender',
+                assetCode: 'USD',
+                assetScale: 2
+              }
+            });
+          },
+          (err: Error) => {
+            assert(err instanceof InvalidQuoteIdError);
+            assert.match(err.message, /Could not find/);
+            return true;
+          }
+        );
+      });
+
+      it('throws InvalidQuoteStateError if sender wallet address does not match', () => {
+        const { paymentIntent, quoteId } = makeRemoteIntentWithCompletedQuote();
+
+        assert.throws(
+          () => {
+            paymentIntent.addRemotePaymentFromQuote({
+              id: crypto.randomUUID(),
+              quoteId,
+              senderWalletAddress: {
+                id: crypto.randomUUID(),
+                address: 'other-sender',
+                assetCode: 'USD',
+                assetScale: 2
+              }
+            });
+          },
+          (err: Error) => {
+            assert(err instanceof InvalidQuoteStateError);
+            assert.match(err.message, /Invalid sender/);
+            return true;
+          }
+        );
+      });
+
+      it('throws InvalidQuoteStateError if quote is not COMPLETED', () => {
+        const paymentIntentId = crypto.randomUUID();
+        const quoteId = crypto.randomUUID();
+        const senderWalletAddressId = crypto.randomUUID();
+        const paymentIntent = PaymentIntent.fromObject({
+          id: paymentIntentId,
+          receiverWalletAddress: 'remote.domain.com/alice',
+          destination: PaymentIntentDestination.REMOTE,
+          assetCode: 'USD',
+          assetScale: 2,
+          incomingAmount: null,
+          receivedAmount: 0n,
+          state: 'CREATED',
+          createdAt: new Date(),
+          expiresAt: new Date(Date.now() + 60_000),
+          destinationIlpAddress: 'g.peer.123',
+          quotes: [
+            {
+              id: quoteId,
+              state: 'PENDING',
+              senderWalletAddress: 'sender',
+              senderWalletAddressId,
+              createdAt: new Date()
+            }
+          ],
+          sentPayments: [],
+          inboundPayments: []
+        });
+
+        assert.throws(
+          () => {
+            paymentIntent.addRemotePaymentFromQuote({
+              id: crypto.randomUUID(),
+              quoteId,
+              senderWalletAddress: {
+                id: senderWalletAddressId,
+                address: 'sender',
+                assetCode: 'USD',
+                assetScale: 2
+              }
+            });
+          },
+          (err: Error) => {
+            assert(err instanceof InvalidQuoteStateError);
+            assert.match(err.message, /not completed/);
+            return true;
+          }
+        );
+      });
+
+      it('throws QuoteExpiredError if quote is expired', () => {
+        const { paymentIntent, quoteId, senderWalletAddressId } =
+          makeRemoteIntentWithCompletedQuote({
+            quoteExpiresAt: new Date(Date.now() - 1000)
+          });
+
+        assert.throws(
+          () => {
+            paymentIntent.addRemotePaymentFromQuote({
+              id: crypto.randomUUID(),
+              quoteId,
+              senderWalletAddress: {
+                id: senderWalletAddressId,
+                address: 'sender',
+                assetCode: 'USD',
+                assetScale: 2
+              }
+            });
+          },
+          (err: Error) => {
+            assert(err instanceof QuoteExpiredError);
+            return true;
+          }
+        );
+      });
+
+      it('throws InvalidQuoteStateError if quote already consumed', () => {
+        const paymentIntentId = crypto.randomUUID();
+        const quoteId = crypto.randomUUID();
+        const senderWalletAddressId = crypto.randomUUID();
+        const { paymentIntent } = makeRemoteIntentWithCompletedQuote({
+          quoteId,
+          senderWalletAddressId,
+          extraPayments: [
+            {
+              destination: 'REMOTE',
+              peerId: 'peer-1',
+              id: crypto.randomUUID(),
+              state: 'CREATED',
+              quoteId,
+              senderWalletAddress: 'sender',
+              senderWalletAddressId,
+              paymentIntentId,
+              assetCode: 'USD',
+              assetScale: 2,
+              createdAt: new Date(),
+              debitAmount: 500n,
+              receiveAmount: 100n,
+              sentAmount: 0n
+            }
+          ]
+        });
+
+        assert.throws(
+          () => {
+            paymentIntent.addRemotePaymentFromQuote({
+              id: crypto.randomUUID(),
+              quoteId,
+              senderWalletAddress: {
+                id: senderWalletAddressId,
+                address: 'sender',
+                assetCode: 'USD',
+                assetScale: 2
+              }
+            });
+          },
+          (err: Error) => {
+            assert(err instanceof InvalidQuoteStateError);
+            assert.match(err.message, /Already consumed quote/);
+            return true;
+          }
+        );
+      });
     });
   });
 
@@ -1676,6 +1892,8 @@ describe('PaymentIntent Entity', () => {
           inboundPayments: [],
           sentPayments: [
             {
+              destination: 'REMOTE',
+              peerId: 'peer-1',
               id: paymentId,
               state: overrides?.paymentState ?? 'CREATED',
               quoteId,
@@ -1704,6 +1922,7 @@ describe('PaymentIntent Entity', () => {
       assert.equal(payment.state, 'PROCESSING');
       assert.equal(payment.ledgerTransferId, undefined);
       const [reloaded] = paymentIntent.sentPayments;
+      assert.ok(isRemoteSentPayment(reloaded));
       assert.equal(reloaded.state, 'PROCESSING');
       assert.equal(reloaded.ledgerTransferId, undefined);
     });
@@ -1830,6 +2049,8 @@ describe('PaymentIntent Entity', () => {
           inboundPayments: [],
           sentPayments: [
             {
+              destination: 'REMOTE',
+              peerId: 'peer-1',
               id: paymentId,
               state: paymentState,
               senderWalletAddress: 'sender',
@@ -1941,6 +2162,8 @@ describe('PaymentIntent Entity', () => {
           inboundPayments: [],
           sentPayments: [
             {
+              destination: 'REMOTE',
+              peerId: 'peer-1',
               id: paymentId,
               state: paymentState,
               senderWalletAddress: 'sender',
@@ -2056,6 +2279,8 @@ describe('PaymentIntent Entity', () => {
           inboundPayments: [],
           sentPayments: [
             {
+              destination: 'REMOTE',
+              peerId: 'peer-1',
               id: paymentId,
               state: paymentState,
               senderWalletAddress: 'sender',
@@ -2145,6 +2370,8 @@ describe('PaymentIntent Entity', () => {
           inboundPayments: [],
           sentPayments: [
             {
+              destination: 'REMOTE',
+              peerId: 'peer-1',
               id: paymentId,
               state: paymentState,
               senderWalletAddress: 'sender',
@@ -2216,11 +2443,12 @@ describe('PaymentIntent Entity', () => {
         | 'PROCESSING'
         | 'COMPLETED'
         | 'FAILED',
-      opts?: { incomingAmount?: bigint; receiveAmount?: bigint }
+      opts?: { incomingAmount?: bigint; receiveAmount?: bigint | null }
     ) {
       const paymentIntentId = crypto.randomUUID();
       const paymentId = crypto.randomUUID();
-      const receiveAmount = opts?.receiveAmount ?? 100n;
+      const receiveAmount =
+        opts?.receiveAmount === undefined ? 100n : opts.receiveAmount;
       return {
         paymentIntentId,
         paymentId,
@@ -2240,6 +2468,8 @@ describe('PaymentIntent Entity', () => {
           inboundPayments: [],
           sentPayments: [
             {
+              destination: 'REMOTE',
+              peerId: 'peer-1',
               id: paymentId,
               state: paymentState,
               senderWalletAddress: 'sender',
@@ -2287,6 +2517,21 @@ describe('PaymentIntent Entity', () => {
 
       paymentIntent.completeRemotePayment({ id: paymentId });
 
+      assert.equal(paymentIntent.state, 'CREATED');
+    });
+
+    it('completes a quoteless payment without touching receivedAmount', () => {
+      const { paymentIntent, paymentId } = makeRemoteIntent('CONFIRMED', {
+        incomingAmount: 100n,
+        receiveAmount: null
+      });
+
+      const payment = paymentIntent.completeRemotePayment({ id: paymentId });
+
+      assert.equal(payment.state, 'COMPLETED');
+      assert.equal(payment.sentAmount, 500n);
+      assert.equal(payment.receiveAmount, null);
+      assert.equal(paymentIntent.receivedAmount, 0n);
       assert.equal(paymentIntent.state, 'CREATED');
     });
 
@@ -2529,6 +2774,7 @@ describe('PaymentIntent Entity', () => {
         inboundPayments: [],
         sentPayments: [
           {
+            destination: 'LOCAL',
             id: 'payment-1',
             state: 'COMPLETED',
             paymentIntentId: paymentIntentId,
@@ -2641,6 +2887,7 @@ describe('PaymentIntent Entity', () => {
         inboundPayments: [],
         sentPayments: [
           {
+            destination: 'LOCAL',
             id: 'payment-1',
             state: 'CANCELLED',
             paymentIntentId: paymentIntentId,
@@ -2689,6 +2936,7 @@ describe('PaymentIntent Entity', () => {
         inboundPayments: [],
         sentPayments: [
           {
+            destination: 'LOCAL',
             id: 'payment-1',
             state: 'COMPLETED',
             paymentIntentId: paymentIntentId,
@@ -2977,6 +3225,27 @@ describe('PaymentIntent Entity', () => {
         quote.expiresAt.getTime(),
         new Date(now + 1000 * 60 * 10).getTime()
       );
+    });
+
+    it('preserves the whole route through completion', () => {
+      const { paymentIntent, quoteId } = makePaymentIntentWithPendingQuote();
+      const routeBefore = paymentIntent.quotes[0]?.route;
+      assert.deepEqual(routeBefore, {
+        peerId: 'peer-1',
+        peerAssetCode: 'USD',
+        peerAssetScale: 2,
+        sourceAmount: 100n,
+        senderAssetCode: 'USD'
+      });
+
+      paymentIntent.completeRemoteQuote({
+        id: quoteId,
+        receiveAmountValue: 50n
+      });
+
+      const quote = paymentIntent.quotes[0];
+      assert.equal(quote.state, 'COMPLETED');
+      assert.deepEqual(quote.route, routeBefore);
     });
 
     it('caps quote expiry at payment intent expiry if intent expires sooner', () => {

@@ -4,22 +4,25 @@ const DELIMITER = '_';
 
 export function encodeCompoundId(
   paymentIntentId: string,
-  quoteId: string
+  resourceId: string
 ): string {
-  return Buffer.from(`${paymentIntentId}${DELIMITER}${quoteId}`).toString(
+  return Buffer.from(`${paymentIntentId}${DELIMITER}${resourceId}`).toString(
     'base64url'
   );
 }
 
 export function decodeCompoundId(value: string): {
   paymentIntentId: string;
-  quoteId: string;
+  resourceId: string;
 } {
-  const [paymentIntentId, quoteId] = Buffer.from(value, 'base64url')
+  // accepts either the URL or the bare id
+  const compoundId = value.split('/').filter(Boolean).at(-1) ?? '';
+
+  const [paymentIntentId, resourceId] = Buffer.from(compoundId, 'base64url')
     .toString('utf-8')
     .split(DELIMITER);
 
-  if (!paymentIntentId || !quoteId) {
+  if (!paymentIntentId || !resourceId) {
     throw new OpenPaymentsResourceServerRouteError(
       404,
       'Malformed id',
@@ -27,5 +30,5 @@ export function decodeCompoundId(value: string): {
     );
   }
 
-  return { paymentIntentId, quoteId };
+  return { paymentIntentId, resourceId };
 }

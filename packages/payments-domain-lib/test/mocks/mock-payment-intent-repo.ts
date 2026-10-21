@@ -6,6 +6,7 @@ import {
   IPaymentIntent,
   IPaymentIntentRepository,
   ISentPayment,
+  isRemoteSentPayment,
   PaymentIntentState,
   SentPaymentState,
   SortOrder,
@@ -56,24 +57,7 @@ export class MockPaymentIntentRepo implements IPaymentIntentRepository {
       results.push({
         ...p,
         quotes: p.quotes.map((quote) => ({ ...quote })),
-        sentPayments: p.sentPayments.map((payment) => ({
-          id: payment.id,
-          state: payment.state,
-          createdAt: payment.createdAt,
-          paymentIntentId: payment.paymentIntentId,
-          senderWalletAddress: payment.senderWalletAddress,
-          senderWalletAddressId: payment.senderWalletAddressId,
-          quoteId: payment.quoteId,
-          assetCode: payment.assetCode,
-          assetScale: payment.assetScale,
-          debitAmount: payment.debitAmount,
-          receiveAmount: payment.receiveAmount,
-          sentAmount: payment.sentAmount,
-          ledgerTransferId: payment.ledgerTransferId,
-          failReason: payment.failReason,
-          cancelledAt: payment.cancelledAt,
-          cancelReason: payment.cancelReason
-        })),
+        sentPayments: p.sentPayments.map((payment) => ({ ...payment })),
         inboundPayments: p.inboundPayments.map((inboundPayment) => ({
           id: inboundPayment.id,
           state: inboundPayment.state,
@@ -422,7 +406,9 @@ export class MockPaymentIntentRepo implements IPaymentIntentRepository {
           throw new Error('Could not find payment in store');
         }
         foundPayment.state = payment.state;
-        foundPayment.ledgerTransferId = payment.ledgerTransferId;
+        if (isRemoteSentPayment(foundPayment)) {
+          foundPayment.ledgerTransferId = payment.ledgerTransferId;
+        }
       }
     }
   }
@@ -445,7 +431,7 @@ export class MockPaymentIntentRepo implements IPaymentIntentRepository {
           throw new Error('Could not find payment in store');
         }
         foundPayment.state = payment.state;
-        if (payment.failReason) {
+        if (payment.failReason && isRemoteSentPayment(foundPayment)) {
           foundPayment.failReason = payment.failReason;
         }
       }
@@ -488,7 +474,7 @@ export class MockPaymentIntentRepo implements IPaymentIntentRepository {
           throw new Error('Could not find payment in store');
         }
         foundPayment.state = payment.state;
-        if (payment.failReason) {
+        if (payment.failReason && isRemoteSentPayment(foundPayment)) {
           foundPayment.failReason = payment.failReason;
         }
       }

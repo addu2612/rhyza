@@ -1,0 +1,15 @@
+meta {
+  name: Get Payment
+  type: http
+  seq: 2
+}
+
+get {
+  url: http://{{adminApiUrl}}/payment-intents/{{paymentIntentId}}/payments/{{paymentId}}
+  body: none
+  auth: none
+}
+
+docs {
+  Reads the payment. The state should be COMPLETED, and the debitAmount should equal the sentAmount.
+}

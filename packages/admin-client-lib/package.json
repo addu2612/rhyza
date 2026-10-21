@@ -9,7 +9,7 @@
   },
   "keywords": [],
   "author": "",
-  "license": "ISC",
+  "license": "Apache-2.0",
   "devDependencies": {
     "@openapitools/openapi-generator-cli": "^2.35.0",
     "tsx": "^4.19.3"

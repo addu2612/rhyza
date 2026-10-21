@@ -23,7 +23,7 @@ export interface FakeStreamCredentials {
 
 export function createFakeResolveStreamCredentials(
   serverSecret: Buffer = randomBytes(32),
-  serverAddress: string = 'test.rafiki'
+  serverAddress: string = 'test.rhyza'
 ): FakeStreamCredentials {
   const streamServer = new StreamServer({ serverSecret, serverAddress });
   const byAddress = new Map<string, ResolvedStreamCredentials>();

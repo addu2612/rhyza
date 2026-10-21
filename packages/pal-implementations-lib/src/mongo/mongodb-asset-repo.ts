@@ -81,26 +81,24 @@ export class MongoDbAssetRepo implements IPalAssetRepository {
         { $set: asset },
         { upsert: true }
       );
-      return;
     } catch (e) {
       this._logger.error(e);
       throw new Error(`Unable to store asset - error: ${(e as Error).message}`);
     }
   }
 
-  async fetch(code: string): Promise<IPalAssetDto | null> {
+  async fetch(codes?: string[]): Promise<IPalAssetDto[]> {
     this._checkInitialisedOrThrow();
 
+    const filter = codes && codes.length > 0 ? { code: { $in: codes } } : {};
+
     try {
-      const doc = await this._collection.findOne({ code: code });
-      if (!doc) {
-        return null;
-      }
-      return {
+      const docs = await this._collection.find(filter).toArray();
+      return docs.map((doc) => ({
         code: doc.code,
         scale: doc.scale,
         ledgerAccountId: doc.ledgerAccountId || null
-      };
+      }));
     } catch (e) {
       this._logger.error(e);
       throw new Error(

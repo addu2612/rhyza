@@ -60,7 +60,8 @@ export default defineConfig({
           lang: 'en'
         },
         es: {
-          label: 'Español'
+          label: 'Español',
+          lang: 'es'
         }
       },
       head: [
@@ -90,108 +91,70 @@ export default defineConfig({
         {
           icon: 'github',
           label: 'GitHub',
-          href: 'https://github.com/interledger/rafiki-v2'
+          href: 'https://github.com/interledger/rhyza'
         }
       ],
       sidebar: [
         {
           label: 'Overview',
+          translations: { es: 'Introducción' },
+          link: 'overview'
+        },
+        {
+          label: 'Architecture',
+          link: '/architecture'
+        },
+        {
+          label: 'Concepts',
           translations: {
-            es: 'Introducción'
+            es: 'Conceptos'
           },
+          collapsed: true,
           items: [
             {
-              label: 'Introducing Rhyza',
-              translations: { es: 'Sobre Rhyza' },
-              link: '/overview/overview'
+              label: 'Accounts and liquidity',
+              translations: { es: 'Transacciones en Rhyza' },
+              link: '/concepts/accounting'
             },
             {
-              label: 'Concepts',
-              translations: { es: 'Conceptos' },
-              collapsed: true,
-              items: [
-                {
-                  label: 'Financial service provider',
-                  link: '/overview/concepts/financial-service-provider'
-                },
-                {
-                  label: 'Accounting',
-                  translations: { es: 'Transacciones en Rhyza' },
-                  link: '/overview/concepts/accounting'
-                },
-                {
-                  label: 'Clearing and settlement',
-                  translations: { es: 'Compensación y liquidación' },
-                  link: '/overview/concepts/clearing-settlement'
-                },
-                {
-                  label: 'Interledger',
-                  translations: { es: 'Interledger' },
-                  link: '/overview/concepts/interledger'
-                },
-                {
-                  label: 'Open Payments',
-                  translations: { es: 'Open Payments' },
-                  link: '/overview/concepts/open-payments'
-                },
-                {
-                  label: 'Wallet addresses',
-                  translations: { es: 'Wallet addresses' },
-                  link: '/overview/concepts/wallet-addresses'
-                }
-              ]
+              label: 'Clearing and settlement',
+              translations: { es: 'Compensación y liquidación' },
+              link: '/concepts/clearing-settlement'
+            },
+            {
+              label: 'Financial service provider',
+              translations: { es: 'Proveedor de servicios financieros (FSP)' },
+              link: '/concepts/financial-service-provider'
+            },
+            {
+              label: 'Interledger',
+              translations: { es: 'Interledger' },
+              link: '/concepts/interledger'
+            },
+            {
+              label: 'Open Payments',
+              translations: { es: 'Open Payments' },
+              link: '/concepts/open-payments'
+            },
+            {
+              label: 'Payment intents and payments',
+              translations: { es: 'Payment intents and payments' },
+              link: '/concepts/payment-intents-and-payments'
+            },
+            {
+              label: 'Wallet addresses',
+              translations: { es: 'Wallet addresses' },
+              link: '/concepts/wallet-addresses'
             }
           ]
         },
         {
           label: 'Integration',
-          collapsed: true,
-          items: [
-            {
-              label: 'Overview',
-              link: '/integration/overview'
-            },
-            {
-              label: 'Requirements',
-              collapsed: true,
-              items: [
-                {
-                  label: 'Integration checklist',
-                  link: '/integration/requirements/checklist'
-                },
-                {
-                  label: 'Assets',
-                  link: '/integration/requirements/assets'
-                },
-                {
-                  label: 'Exchange rates',
-                  link: '/integration/requirements/exchange-rates'
-                },
-                {
-                  label: 'Peers',
-                  link: '/integration/requirements/peers'
-                },
-                {
-                  label: 'Wallet addresses',
-                  link: '/integration/requirements/wallet-addresses'
-                },
-                {
-                  label: 'Webhook events',
-                  link: '/integration/requirements/webhook-events'
-                }
-              ]
-            },
-            {
-              label: 'Test locally',
-              collapsed: true,
-              items: [
-                {
-                  label: 'Local playground',
-                  link: '/integration/playground/overview'
-                }
-              ]
-            }
-          ]
+          link: '/integration'
+        },
+        {
+          label: 'Test locally',
+          link: '/testlocal'
         },
         {
           label: 'API Specifications',
@@ -206,12 +169,12 @@ export default defineConfig({
               link: '/apis/#tag/admin-api-overview'
             },
             {
-              label: 'Webhooks API',
-              link: '/apis/#tag/webhooks-api-overview'
-            },
-            {
               label: 'Identity Provider Service API',
               link: '/apis/#tag/identity-provider-service-api-overview'
+            },
+            {
+              label: 'Webhooks API',
+              link: '/apis/#tag/webhooks-api-overview'
             }
           ]
         },
@@ -222,14 +185,6 @@ export default defineConfig({
             {
               label: 'Glossary',
               link: '/resources/glossary'
-            },
-            {
-              label: 'Architecture',
-              link: '/resources/architecture'
-            },
-            {
-              label: 'Webhook event types',
-              link: '/resources/webhook-event-types'
             },
             {
               label: 'Get involved',

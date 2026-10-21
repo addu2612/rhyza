@@ -1,0 +1,18 @@
+meta {
+  name: Open Payments
+  seq: 2
+}
+
+auth {
+  mode: inherit
+}
+
+docs {
+  The same scenarios as Admin, driven the way a client drives them — through
+  the Open Payments API. Setup still goes through Admin: assets, wallet
+  addresses, peers and liquidity are operator concerns a client cannot create.
+
+  Node A reaches Node B by its resource id, which is a URL carrying Node B's
+  advertised address. Bruno itself reaches both nodes on localhost, so its own
+  GETs rebuild the URL from the id's last segment.
+}

@@ -1,7 +1,7 @@
 apiVersion: 1
 
 providers:
-  - name: Rafiki V2
+  - name: Rhyza
     type: file
     options:
       path: /etc/grafana/dashboards

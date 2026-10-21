@@ -12,6 +12,7 @@ import {
   PalClientLedgerUnknownError,
   PalClientPeerAlreadyExistsError,
   PalClientPeerNotFoundError,
+  PalClientPeerAlreadyInactiveError,
   PalClientUnknownError,
   PalClientWalletAddressAlreadyActiveError,
   PalClientWalletAddressAlreadyInactiveError,
@@ -27,9 +28,9 @@ import {
   PbCreateWalletAddressRequest,
   PbActivateWalletAddressRequest,
   PbCreateWalletAddressResponse,
+  PbGetAssetsRequest,
+  PbGetAssetsResponse,
   PbDeactivateWalletAddressRequest,
-  PbGetAssetRequest,
-  PbGetAssetResponse,
   PbGetWalletAddressesRequest,
   PbGetWalletAddressesResponse,
   PalGrpcClient,
@@ -140,36 +141,33 @@ export class PalClient {
     });
   }
 
-  async getAsset(code: string): Promise<IPalAssetDto | null> {
-    const request = new PbGetAssetRequest();
-    request.setCode(code);
+  async getAssets(codes?: string[]): Promise<IPalAssetDto[]> {
+    const request = new PbGetAssetsRequest();
+    if (codes && codes.length > 0) {
+      request.setCodesList(codes);
+    }
 
     return new Promise((resolve, reject) => {
-      this._grpcClient.getAsset(
+      this._grpcClient.getAssets(
         request,
-        (error: ServiceError | null, response: PbGetAssetResponse) => {
+        (error: ServiceError | null, response: PbGetAssetsResponse) => {
           if (error) {
             console.error(error);
             return reject(new PalClientUnknownError(error.message));
           }
+          const resAssets = response.getAssetsList();
 
-          if (!response.hasAsset()) {
-            return resolve(null);
-          }
-          const respAsset = response.getAsset();
-          if (!respAsset) {
-            return resolve(null);
-          }
+          const respAssets = resAssets.map((asset) => {
+            return {
+              code: asset.getCode(),
+              scale: asset.getScale(),
+              ledgerAccountId: asset.hasLedgerAccountId()
+                ? asset.getLedgerAccountId()!
+                : null
+            };
+          });
 
-          const respObj: IPalAssetDto = {
-            code: respAsset.getCode(),
-            scale: respAsset.getScale(),
-            ledgerAccountId: respAsset.hasLedgerAccountId()
-              ? respAsset.getLedgerAccountId()!
-              : null
-          };
-
-          return resolve(respObj);
+          return resolve(respAssets);
         }
       );
     });
@@ -800,6 +798,9 @@ export class PalClient {
         if (error) {
           if (error.code == grpc.status.NOT_FOUND) {
             return reject(new PalClientPeerNotFoundError(error.message));
+          }
+          if (error.code === grpc.status.FAILED_PRECONDITION) {
+            return reject(new PalClientPeerAlreadyInactiveError(error.message));
           }
           return reject(new PalClientUnknownError(error.message));
         }

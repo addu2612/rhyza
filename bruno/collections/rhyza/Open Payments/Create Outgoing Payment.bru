@@ -1,0 +1,32 @@
+meta {
+  name: Create Outgoing Payment
+  type: http
+  seq: 9
+}
+
+post {
+  url: http://{{openPaymentsResourceServerUrl}}/outgoing-payments
+  body: json
+  auth: none
+}
+
+body:json {
+  {
+    "walletAddress": "https://test.com/sender",
+    "incomingPayment": "http://open-payments-resource-service:3002/incoming-payments/{{incomingPaymentId}}",
+    "debitAmount": {
+      "assetScale": 2,
+      "assetCode": "USD",
+      "value": "1000"
+    }
+  }
+}
+
+script:post-response {
+  const body = res.getBody();
+  
+  if (body?.id) {
+    bru.setVar("outgoingPaymentId", body.id);
+    bru.setVar("outgoingPaymentIdSegment", body.id.split("/").pop());
+  }
+}

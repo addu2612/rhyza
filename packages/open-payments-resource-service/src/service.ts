@@ -32,8 +32,8 @@ const OPEN_PAYMENTS_AUTH_SERVICE_URL =
 
 const STREAM_SERVER_SECRET_RAW =
   process.env['STREAM_SERVER_SECRET'] ||
-  Buffer.from('rafiki-v2-dev-stream-secret-0001').toString('base64url');
-const ILP_ADDRESS = process.env['ILP_ADDRESS'] || 'private.rafiki';
+  Buffer.from('rhyza-dev-stream-secret-0001').toString('base64url');
+const ILP_ADDRESS = process.env['ILP_ADDRESS'] || 'private.rhyza';
 
 export class OpenPaymentsResourceServer {
   private static logger: ILogger;
@@ -89,6 +89,7 @@ export class OpenPaymentsResourceServer {
     this.server.register(incomingPaymentRoutes, {
       palClient: this.palClient,
       paymentsClient: this.paymentsClient,
+      openPaymentsUrl: OPEN_PAYMENTS_RESOURCE_SERVICE_URL,
       streamServer: createStreamServer({
         serverSecret: parseStreamServerSecret(STREAM_SERVER_SECRET_RAW),
         serverAddress: ILP_ADDRESS
@@ -104,7 +105,7 @@ export class OpenPaymentsResourceServer {
     this.server.register(quoteRoutes, {
       palClient: this.palClient,
       paymentsClient: this.paymentsClient,
-      openPaymentsAuthServiceUrl: OPEN_PAYMENTS_AUTH_SERVICE_URL
+      openPaymentsUrl: OPEN_PAYMENTS_RESOURCE_SERVICE_URL
     });
 
     this.server.register(walletAddressRoutes, {

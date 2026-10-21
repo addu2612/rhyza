@@ -37,12 +37,12 @@ import {
   CreatePaymentResult,
   CreateQuoteResult,
   GetPaymentIntentResult,
-  GetPaymentResult,
+  IPayment,
   GetQuoteResult,
   IAmount,
   IPage,
   IPageQuery,
-  IncomingPaymentInput
+  PaymentIntentInput
 } from './local-types';
 
 export class PaymentsClient {
@@ -52,7 +52,7 @@ export class PaymentsClient {
   private readonly _openPaymentsUrl: string | undefined;
 
   /**
-   * @param openPaymentsUrl - Base URL of this node's Open Payments server (e.g. https://payments.example.com).
+   * @param openPaymentsUrl - Base URL of this instance's Open Payments server (e.g. https://payments.example.com).
    *   Required for remote quoting and payments; may omit for local-only use.
    */
   constructor(
@@ -98,7 +98,7 @@ export class PaymentsClient {
     receiverWalletAddress: string,
     incomingAmount?: number,
     expiresAt?: string,
-    metadata?: string
+    metadata?: Record<string, unknown>
   ): Promise<CreatePaymentIntentResult> {
     const request = new PbCreatePaymentIntentRequest();
     request.setId(id);
@@ -112,7 +112,7 @@ export class PaymentsClient {
       request.setExpiresAt(expiresAt);
     }
     if (metadata !== undefined) {
-      request.setMetadata(metadata);
+      request.setMetadata(JSON.stringify(metadata));
     }
 
     return new Promise((resolve, reject) => {
@@ -127,8 +127,20 @@ export class PaymentsClient {
             return reject(error);
           }
 
+          const incomingAmount = response.getIncomingAmount();
+          const expiresAt = response.getExpiresAt();
+
           return resolve({
-            id: response.getId()
+            id: response.getId(),
+            receiverWalletAddress: response.getReceiverWalletAddress(),
+            state: response.getState(),
+            destination: response.getDestination(),
+            receivedAmount: BigInt(response.getReceivedAmount()),
+            assetCode: response.getAssetCode(),
+            assetScale: response.getAssetScale(),
+            incomingAmount: incomingAmount ? BigInt(incomingAmount) : undefined,
+            expiresAt: expiresAt || undefined,
+            createdAt: response.getCreatedAt()
           });
         }
       );
@@ -175,33 +187,35 @@ export class PaymentsClient {
 
   async createQuote(
     id: string,
-    incomingPayment: IncomingPaymentInput,
+    paymentIntent: PaymentIntentInput,
     senderWalletAddressId: string,
     senderWalletAddress: string,
     debitAmount?: number,
-    receiveAmount?: number
+    receiveAmount?: number,
+    createdAt?: string
   ): Promise<CreateQuoteResult> {
     let paymentIntentId: string;
-    let remoteUrl: string | undefined;
+    let remotePaymentIntentUrl: string | undefined;
 
-    if ('incomingPaymentUrl' in incomingPayment) {
+    if ('paymentIntentUrl' in paymentIntent) {
+      // openPaymentsUrl is the only thing telling us which URLs are ours.
+      // Without it we could fetch our own intents from ourselves and store
+      // each as a duplicate REMOTE one.
       if (!this._openPaymentsUrl) {
         throw createServiceError(
           status.FAILED_PRECONDITION,
-          'Remote quoting is currently not configured',
-          'RemoteQuotingNotConfigured'
+          'openPaymentsUrl is not configured, so a payment intent URL cannot be resolved',
+          'OpenPaymentsUrlNotConfigured'
         );
       }
-      if (
-        incomingPayment.incomingPaymentUrl.startsWith(this._openPaymentsUrl)
-      ) {
-        paymentIntentId = incomingPayment.incomingPaymentUrl.split('/').at(-1)!;
+      if (paymentIntent.paymentIntentUrl.startsWith(this._openPaymentsUrl)) {
+        paymentIntentId = paymentIntent.paymentIntentUrl.split('/').at(-1)!;
       } else {
         paymentIntentId = randomUUID();
-        remoteUrl = incomingPayment.incomingPaymentUrl;
+        remotePaymentIntentUrl = paymentIntent.paymentIntentUrl;
       }
     } else {
-      paymentIntentId = incomingPayment.incomingPaymentId;
+      paymentIntentId = paymentIntent.paymentIntentId;
     }
 
     const request = new PbCreateQuoteRequest();
@@ -216,8 +230,11 @@ export class PaymentsClient {
     if (receiveAmount) {
       request.setReceiveAmount(receiveAmount);
     }
-    if (remoteUrl) {
-      request.setRemoteUrl(remoteUrl);
+    if (remotePaymentIntentUrl) {
+      request.setRemotePaymentIntentUrl(remotePaymentIntentUrl);
+    }
+    if (createdAt) {
+      request.setCreatedAt(createdAt);
     }
 
     return new Promise((resolve, reject) => {
@@ -245,14 +262,50 @@ export class PaymentsClient {
     });
   }
 
+  /**
+   * Creates a payment against a payment intent, identified by its local id
+   * or its incoming payment URL.
+   *
+   * Read `paymentIntentId` off the response rather than re-using based on
+   * what is passed in here. When a remote URL is passed in we generate an
+   * id internally instead of using id in the segment.
+   */
   async createPayment(
     id: string,
+    paymentIntent: PaymentIntentInput,
     walletAddressId: string,
     walletAddress: string,
-    paymentIntentId: string,
     quoteId?: string,
-    debitAmount?: number
+    debitAmount?: number,
+    createdAt?: string,
+    grantId?: string,
+    metadata?: Record<string, unknown>
   ): Promise<CreatePaymentResult> {
+    let paymentIntentId: string;
+    let remotePaymentIntentUrl: string | undefined;
+
+    if ('paymentIntentUrl' in paymentIntent) {
+      // openPaymentsUrl is the only thing telling us which URLs are ours.
+      // Without it we could fetch our own intents from ourselves and store
+      // each as a duplicate REMOTE one.
+      if (!this._openPaymentsUrl) {
+        throw createServiceError(
+          status.FAILED_PRECONDITION,
+          'openPaymentsUrl is not configured, so a payment intent URL cannot be resolved',
+          'OpenPaymentsUrlNotConfigured'
+        );
+      }
+      if (paymentIntent.paymentIntentUrl.startsWith(this._openPaymentsUrl)) {
+        paymentIntentId = paymentIntent.paymentIntentUrl.split('/').at(-1)!;
+      } else {
+        // mint a new id, although the response will contain different id if the remote payment intent already exists.
+        paymentIntentId = randomUUID();
+        remotePaymentIntentUrl = paymentIntent.paymentIntentUrl;
+      }
+    } else {
+      paymentIntentId = paymentIntent.paymentIntentId;
+    }
+
     const request = new PbCreatePaymentRequest();
     request.setId(id);
     request.setWalletAddressId(walletAddressId);
@@ -267,6 +320,22 @@ export class PaymentsClient {
       request.setDebitAmount(debitAmount);
     }
 
+    if (remotePaymentIntentUrl) {
+      request.setRemotePaymentIntentUrl(remotePaymentIntentUrl);
+    }
+
+    if (createdAt) {
+      request.setCreatedAt(createdAt);
+    }
+
+    if (grantId) {
+      request.setGrantId(grantId);
+    }
+
+    if (metadata) {
+      request.setMetadata(JSON.stringify(metadata));
+    }
+
     return new Promise((resolve, reject) => {
       this._grpcClient.createPayment(
         request,
@@ -276,8 +345,18 @@ export class PaymentsClient {
             return reject(error);
           }
 
+          const payment = response.getPayment();
+          if (!payment) {
+            return reject(
+              createServiceError(status.INTERNAL, 'Response missing payment')
+            );
+          }
+
+          const result = PaymentsClient._paymentFromPb(payment);
           return resolve({
-            id: response.getId()
+            id: result.id,
+            paymentIntentId: result.paymentIntentId,
+            payment: result
           });
         }
       );
@@ -417,10 +496,7 @@ export class PaymentsClient {
     });
   }
 
-  async getPayment(
-    paymentIntentId: string,
-    id: string
-  ): Promise<GetPaymentResult> {
+  async getPayment(paymentIntentId: string, id: string): Promise<IPayment> {
     const request = new PbGetPaymentRequest();
     request.setId(id);
     request.setPaymentIntentId(paymentIntentId);
@@ -486,7 +562,7 @@ export class PaymentsClient {
 
   async getPaymentsPage(
     query: IPageQuery & { paymentIntentId?: string } = {}
-  ): Promise<IPage<GetPaymentResult>> {
+  ): Promise<IPage<IPayment>> {
     const { cursor, limit, backwards, sortOrder } =
       PaymentsClient._pageArgs(query);
 
@@ -598,13 +674,14 @@ export class PaymentsClient {
       expiresAt: expiresAt || undefined,
       destinationIlpAddress: destinationIlpAddress || undefined,
       createdAt: response.getCreatedAt(),
-      remoteUrl: response.getRemoteUrl() || undefined
+      remoteUrl: response.getRemoteUrl() || undefined,
+      metadata: PaymentsClient._metadataFromPb(response.getMetadata())
     };
   }
 
-  private static _paymentFromPb(response: PbPayment): GetPaymentResult {
+  private static _paymentFromPb(response: PbPayment): IPayment {
     const quoteId = response.getQuoteId();
-    const remoteUrl = response.getRemoteUrl();
+    const remotePaymentIntentUrl = response.getRemotePaymentIntentUrl();
     const failReason = response.getFailReason();
 
     return {
@@ -618,18 +695,32 @@ export class PaymentsClient {
         response.getDebitAmount(),
         'debitAmount'
       ),
-      receiveAmount: PaymentsClient._amountFromPb(
-        response.getReceiveAmount(),
-        'receiveAmount'
-      ),
+      // Left unset on the wire for a quoteless payment; _amountFromPb is for
+      // required amounts and would throw.
+      receiveAmount: response.hasReceiveAmount()
+        ? PaymentsClient._amountFromPb(
+            response.getReceiveAmount(),
+            'receiveAmount'
+          )
+        : null,
       sentAmount: PaymentsClient._amountFromPb(
         response.getSentAmount(),
         'sentAmount'
       ),
       createdAt: response.getCreatedAt(),
-      remoteUrl: remoteUrl || undefined,
-      failReason: failReason || undefined
+      remotePaymentIntentUrl: remotePaymentIntentUrl || undefined,
+      failReason: failReason || undefined,
+      metadata: PaymentsClient._metadataFromPb(response.getMetadata())
     };
+  }
+
+  private static _metadataFromPb(
+    metadata?: string
+  ): Record<string, unknown> | undefined {
+    if (!metadata) return undefined;
+    const parsed = JSON.parse(metadata);
+    if (Object.keys(parsed).length === 0) return undefined;
+    return parsed as Record<string, unknown>;
   }
 
   private static _amountFromPb(

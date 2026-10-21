@@ -1,0 +1,36 @@
+---
+title: Open Payments
+---
+
+import { LinkOut } from '@interledger/docs-design-system'
+
+Open Payments is an open API standard that allows third-party clients to interface with a financial service provider's (FSP's) customer accounts.
+
+Rhyza follows the Open Payments standard. When an FSP adopts the standard, clients can call the Open Payments APIs against customer accounts to retrieve information and authorize payments. Clients can only interface with a customer's account with the customer's consent.
+
+## Rhyza's Open Payments services
+
+Rhyza provides Open Payments functionality through standalone services that expose the necessary APIs for clients to securely retrieve account information and initiate payments.
+
+### Wallet addresses
+
+A wallet address is a unique URL that identifies an Open Payments-enabled account and is a service endpoint for gaining access to the Open Payments APIs. Rhyza will assign each customer account a wallet address on behalf of the FSP.
+
+Wallet addresses must be a valid HTTPS URL (for example, `https://wallet.example.com/alice`).
+
+See [Wallet addresses](/concepts/wallet-addresses) for more information.
+
+### Open Payments resource server
+
+The Open Payments resource server is a standalone service that exposes the endpoints defined in the <LinkOut href="https://openpayments.dev/apis/#description/introduction">Open Payments specification</LinkOut>. It acts as a stateless translation layer that validates incoming requests and interfaces with Rhyza's backend to manage <LinkOut href='https://openpayments.dev/concepts/resources/#resource-types'>incoming payment, quote, and outgoing payment resources</LinkOut>.
+
+:::note
+Rhyza's Admin API uses the terms _payment intents_ and _payments_ for these same resources. See [Payment intents and payments](/concepts/payment-intents-and-payments) for more information.
+:::
+
+### Open Payments authorization server
+
+The Open Payments authorization server is a standalone service that implements the Open Payments authorization server specification. It's responsible for delegating authorization (via grants) to clients, resolving public keys for authentication, and managing access tokens. Open Payments leverages the <LinkOut href="https://openpayments.dev/concepts/auth/
+">Grant Negotiation and Authorization Protocol (GNAP)</LinkOut> for delegating authorization.
+
+[Learn more about Rhyza's system architecture](/architecture).

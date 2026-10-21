@@ -8,7 +8,7 @@
   },
   "keywords": [],
   "author": "",
-  "license": "ISC",
+  "license": "Apache-2.0",
   "dependencies": {
     "common-types-lib": "workspace:*",
     "implementations-lib": "workspace:*",

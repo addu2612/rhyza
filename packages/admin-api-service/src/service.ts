@@ -11,7 +11,9 @@ import { paymentIntentRoutes } from './routes/payment-intents.js';
 import { quoteRoutes } from './routes/quotes.js';
 import { paymentRoutes } from './routes/payments.js';
 import { liquidityRoutes } from './routes/liquidity.js';
-import { ILogger } from '../../common-types-lib/src/index.js';
+import { grantRoutes } from './routes/grants.js';
+import { ratesRoutes } from './routes/rates.js';
+import { ILogger } from 'common-types-lib';
 import {
   PinoLogger,
   KafkaBuilder,
@@ -19,6 +21,7 @@ import {
   MessageSerializationFactory
 } from 'implementations-lib';
 import crypto from 'crypto';
+import { AuthClient } from 'auth-client-lib';
 
 const BC_NAME = 'ADMIN';
 const APP_NAME = `${BC_NAME}_API_SVC`;
@@ -29,6 +32,7 @@ const HOST = process.env['HOST'] || '0.0.0.0';
 const PAL_GRPC_URL = process.env['PAL_GRPC_URL'] || 'localhost:50051';
 const PAYMENTS_GRPC_URL = process.env['PAYMENTS_GRPC_URL'] || 'localhost:50052';
 const ILP_GRPC_URL = process.env['ILP_GRPC_URL'] || 'localhost:50053';
+const AUTH_GRPC_URL = process.env['AUTH_GRPC_URL'] || 'localhost:50054';
 const OPEN_PAYMENTS_URL = process.env['OPEN_PAYMENTS_URL'];
 const KAFKA_URL = process.env['KAFKA_URL'] || 'localhost:9092';
 
@@ -38,6 +42,7 @@ export class AdminApiService {
   private static palClient: PalClient;
   private static paymentsClient: PaymentsClient;
   private static ilpClient: IlpClient;
+  private static authClient: AuthClient;
   private static msgProducer: KafkaProducer;
 
   static async start(): Promise<void> {
@@ -62,6 +67,10 @@ export class AdminApiService {
     this.ilpClient = new IlpClient(ILP_GRPC_URL);
     await this.ilpClient.init();
     console.log(`Connected to ILP service at ${ILP_GRPC_URL}`);
+
+    this.authClient = new AuthClient(AUTH_GRPC_URL);
+    await this.authClient.init();
+    console.log(`Connected to Auth service at ${AUTH_GRPC_URL}`);
 
     const kafkaBuilder = new KafkaBuilder()
       .withLogger(this.logger.child('kafka'))
@@ -106,6 +115,12 @@ export class AdminApiService {
       paymentsClient: this.paymentsClient
     });
     this.server.register(liquidityRoutes, {
+      palClient: this.palClient
+    });
+    this.server.register(grantRoutes, {
+      authClient: this.authClient
+    });
+    this.server.register(ratesRoutes, {
       palClient: this.palClient
     });
 

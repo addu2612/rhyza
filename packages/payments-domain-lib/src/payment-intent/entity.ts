@@ -19,7 +19,10 @@ import {
   IPendingQuote,
   IPaymentIntent,
   ISentPayment,
+  ILocalSentPayment,
+  IRemoteSentPayment,
   IQuote,
+  IQuoteRoute,
   IInboundPayment,
   PaymentIntentDestination,
   PaymentIntentState,
@@ -31,17 +34,13 @@ import {
 const MAX_PAYMENT_INTENT_EXPIRY_MS = 1000 * 60 * 60 * 24 * 30; // 30 days
 const QUOTE_EXPIRY_MS = 1000 * 60 * 10;
 
-type QuoteData =
-  | {
-      state: 'PENDING';
-      debitAmount?: bigint;
-      receiveAmount?: bigint;
-      peerId?: string;
-      peerAssetCode?: string;
-      peerAssetScale?: number;
-      sourceAmount?: bigint;
-      senderAssetCode?: string;
-    }
+type QuoteRequest = {
+  debitAmount?: bigint;
+  receiveAmount?: bigint;
+};
+
+type QuoteOutcome =
+  | { state: 'PENDING' }
   | {
       state: 'COMPLETED';
       debitAmount: bigint;
@@ -56,96 +55,96 @@ class Quote implements IBaseQuote {
   private _senderWalletAddress: string;
   private _senderWalletAddressId: string;
   private _createdAt: Date;
-  private _data: QuoteData;
+  private _route: IQuoteRoute | undefined;
+  private _request: QuoteRequest;
+  private _outcome: QuoteOutcome;
 
-  private constructor(
-    id: string,
-    senderWalletAddress: string,
-    senderWalletAddressId: string,
-    createdAt: Date,
-    data: QuoteData
-  ) {
-    this._id = id;
-    this._senderWalletAddress = senderWalletAddress;
-    this._senderWalletAddressId = senderWalletAddressId;
-    this._createdAt = createdAt;
-    this._data = data;
+  private constructor(args: {
+    id: string;
+    senderWalletAddress: string;
+    senderWalletAddressId: string;
+    createdAt: Date;
+    route: IQuoteRoute | undefined;
+    request: QuoteRequest;
+    outcome: QuoteOutcome;
+  }) {
+    this._id = args.id;
+    this._senderWalletAddress = args.senderWalletAddress;
+    this._senderWalletAddressId = args.senderWalletAddressId;
+    this._createdAt = args.createdAt;
+    this._route = args.route;
+    this._request = args.request;
+    this._outcome = args.outcome;
   }
 
-  static createPending(
-    id: string,
-    senderWalletAddress: string,
-    senderWalletAddressId: string,
-    peerId?: string,
-    peerAssetCode?: string,
-    peerAssetScale?: number,
-    sourceAmount?: bigint,
-    senderAssetCode?: string,
-    debitAmount?: bigint,
-    receiveAmount?: bigint
-  ): Quote {
-    return new Quote(
-      id,
-      senderWalletAddress,
-      senderWalletAddressId,
-      new Date(),
-      {
-        state: 'PENDING',
-        peerId,
-        peerAssetCode,
-        peerAssetScale,
-        sourceAmount,
-        senderAssetCode,
-        debitAmount,
-        receiveAmount
-      }
-    );
+  static createPending(args: {
+    id: string;
+    senderWalletAddress: string;
+    senderWalletAddressId: string;
+    createdAt: Date;
+    route?: IQuoteRoute;
+    request?: QuoteRequest;
+  }): Quote {
+    return new Quote({
+      ...args,
+      route: args.route,
+      request: args.request ?? {},
+      outcome: { state: 'PENDING' }
+    });
   }
 
   static fromObject(obj: IQuote): Quote {
-    const createdAt = obj.createdAt ?? new Date();
+    const base = {
+      id: obj.id,
+      senderWalletAddress: obj.senderWalletAddress,
+      senderWalletAddressId: obj.senderWalletAddressId,
+      createdAt: obj.createdAt ?? new Date(),
+      route: obj.route,
+      request:
+        obj.state === 'PENDING'
+          ? { debitAmount: obj.debitAmount, receiveAmount: obj.receiveAmount }
+          : {}
+    };
+
     if (obj.state === 'COMPLETED') {
-      return new Quote(
-        obj.id,
-        obj.senderWalletAddress,
-        obj.senderWalletAddressId,
-        createdAt,
-        {
+      return new Quote({
+        ...base,
+        outcome: {
           state: 'COMPLETED',
           debitAmount: obj.debitAmount,
           receiveAmount: obj.receiveAmount,
           exchangeRate: obj.exchangeRate,
           expiresAt: obj.expiresAt
         }
-      );
-    } else if (obj.state === 'FAILED') {
-      return new Quote(
-        obj.id,
-        obj.senderWalletAddress,
-        obj.senderWalletAddressId,
-        createdAt,
-        {
+      });
+    }
+    if (obj.state === 'FAILED') {
+      return new Quote({
+        ...base,
+        outcome: {
           state: 'FAILED',
           errorName: obj.errorName,
           message: obj.message
         }
-      );
-    } else {
-      return new Quote(
-        obj.id,
-        obj.senderWalletAddress,
-        obj.senderWalletAddressId,
-        createdAt,
-        {
-          state: 'PENDING',
-          peerId: obj.peerId,
-          peerAssetCode: obj.peerAssetCode,
-          peerAssetScale: obj.peerAssetScale,
-          sourceAmount: obj.sourceAmount,
-          senderAssetCode: obj.senderAssetCode,
-          debitAmount: obj.debitAmount,
-          receiveAmount: obj.receiveAmount
-        }
+      });
+    }
+    return new Quote({ ...base, outcome: { state: 'PENDING' } });
+  }
+
+  private _base() {
+    return {
+      id: this._id,
+      senderWalletAddress: this._senderWalletAddress,
+      senderWalletAddressId: this._senderWalletAddressId,
+      createdAt: this._createdAt,
+      route: this._route
+    };
+  }
+
+  private _assertPending(): void {
+    if (this._outcome.state !== 'PENDING') {
+      throw new InvalidQuoteStateError(
+        `Quote ${this._id} is not in PENDING state, cannot complete`
       );
     }
   }
@@ -155,16 +154,12 @@ class Quote implements IBaseQuote {
     receiveAmount: bigint;
     exchangeRate: number;
     paymentIntentExpiresAt: Date;
-  }): void {
-    if (this._data.state !== 'PENDING') {
-      throw new InvalidQuoteStateError(
-        `Quote ${this._id} is not in PENDING state, cannot complete`
-      );
-    }
+  }): ICompletedQuote {
+    this._assertPending();
     const { debitAmount, receiveAmount, exchangeRate, paymentIntentExpiresAt } =
       args;
-    this._data = {
-      state: 'COMPLETED',
+    const outcome = {
+      state: 'COMPLETED' as const,
       debitAmount,
       receiveAmount,
       exchangeRate,
@@ -172,32 +167,25 @@ class Quote implements IBaseQuote {
         Math.min(paymentIntentExpiresAt.getTime(), Date.now() + QUOTE_EXPIRY_MS)
       )
     };
+    this._outcome = outcome;
+    return { ...this._base(), ...outcome };
   }
 
   completeRemote(args: {
     receiveAmountValue: bigint;
     fxRate?: number;
     paymentIntentExpiresAt: Date;
-  }): void {
-    if (this._data.state !== 'PENDING') {
+  }): ICompletedQuote {
+    this._assertPending();
+
+    if (!this._route) {
       throw new InvalidQuoteStateError(
-        `Quote ${this._id} is not in PENDING state, cannot complete`
+        `Quote ${this._id} has no route; cannot complete as remote`
       );
     }
-
-    const {
-      peerAssetCode,
-      sourceAmount,
-      senderAssetCode,
-      debitAmount: requestedDebit,
-      receiveAmount: requestedReceive
-    } = this._data;
-
-    if (!peerAssetCode || !sourceAmount || !senderAssetCode) {
-      throw new InvalidQuoteStateError(
-        `Pending quote ${this._id} is missing required remote peer fields (peerAssetCode, sourceAmount, senderAssetCode)`
-      );
-    }
+    const { peerAssetCode, sourceAmount, senderAssetCode } = this._route;
+    const { debitAmount: requestedDebit, receiveAmount: requestedReceive } =
+      this._request;
 
     const { receiveAmountValue, fxRate, paymentIntentExpiresAt } = args;
     const peerToReceiverRate =
@@ -250,8 +238,8 @@ class Quote implements IBaseQuote {
 
     const exchangeRate = Number(computedReceive) / Number(computedDebit);
 
-    this._data = {
-      state: 'COMPLETED',
+    const outcome = {
+      state: 'COMPLETED' as const,
       debitAmount: computedDebit,
       receiveAmount: computedReceive,
       exchangeRate,
@@ -259,15 +247,17 @@ class Quote implements IBaseQuote {
         Math.min(paymentIntentExpiresAt.getTime(), Date.now() + QUOTE_EXPIRY_MS)
       )
     };
+    this._outcome = outcome;
+    return { ...this._base(), ...outcome };
   }
 
   fail(args: { errorName: string; message: string }): void {
-    if (this._data.state !== 'PENDING') {
+    if (this._outcome.state !== 'PENDING') {
       throw new InvalidQuoteStateError(
         `Quote ${this._id} is not in PENDING state, cannot fail`
       );
     }
-    this._data = {
+    this._outcome = {
       state: 'FAILED',
       errorName: args.errorName,
       message: args.message
@@ -275,15 +265,11 @@ class Quote implements IBaseQuote {
   }
 
   toObject(): IQuote {
-    const base = {
-      id: this._id,
-      senderWalletAddress: this._senderWalletAddress,
-      senderWalletAddressId: this._senderWalletAddressId,
-      createdAt: this._createdAt
-    };
-    if (this._data.state === 'COMPLETED') {
+    const base = this._base();
+
+    if (this._outcome.state === 'COMPLETED') {
       const { debitAmount, receiveAmount, exchangeRate, expiresAt } =
-        this._data;
+        this._outcome;
       return {
         ...base,
         state: 'COMPLETED',
@@ -293,20 +279,15 @@ class Quote implements IBaseQuote {
         expiresAt
       };
     }
-    if (this._data.state === 'FAILED') {
-      const { errorName, message } = this._data;
+    if (this._outcome.state === 'FAILED') {
+      const { errorName, message } = this._outcome;
       return { ...base, state: 'FAILED', errorName, message };
     }
     return {
       ...base,
       state: 'PENDING',
-      peerId: this._data.peerId,
-      peerAssetCode: this._data.peerAssetCode,
-      peerAssetScale: this._data.peerAssetScale,
-      sourceAmount: this._data.sourceAmount,
-      senderAssetCode: this._data.senderAssetCode,
-      debitAmount: this._data.debitAmount,
-      receiveAmount: this._data.receiveAmount
+      debitAmount: this._request.debitAmount,
+      receiveAmount: this._request.receiveAmount
     };
   }
 
@@ -315,7 +296,7 @@ class Quote implements IBaseQuote {
   }
 
   get state(): QuoteState {
-    return this._data.state;
+    return this._outcome.state;
   }
 
   get senderWalletAddress(): string {
@@ -329,44 +310,49 @@ class Quote implements IBaseQuote {
   get createdAt(): Date {
     return this._createdAt;
   }
+
+  get peerId(): string | undefined {
+    return this._route?.peerId;
+  }
 }
 
-class SentPayment {
-  private _id: string;
-  private _senderWalletAddress: string;
-  private _senderWalletAddressId: string;
-  private _paymentIntentId: string;
-  private _assetCode: string;
-  private _assetScale: number;
-  private _createdAt: Date;
-  private _debitAmount: bigint;
-  private _receiveAmount: bigint;
-  private _quoteId?: string;
-  private _state: SentPaymentState;
-  private _sentAmount: bigint;
-  private _cancelledAt?: Date;
-  private _cancelReason?: string;
-  private _ledgerTransferId?: string;
-  private _failReason?: string;
+type BaseSentPaymentArgs = {
+  id: string;
+  state: SentPaymentState;
+  senderWalletAddress: string;
+  senderWalletAddressId: string;
+  paymentIntentId: string;
+  assetCode: string;
+  assetScale: number;
+  createdAt: Date;
+  debitAmount: bigint;
+  sentAmount: bigint;
+  quoteId?: string;
+  cancelledAt?: Date;
+  cancelReason?: string;
+  grantId?: string;
+  metadata?: Record<string, unknown>;
+};
 
-  private constructor(args: {
-    id: string;
-    state: SentPaymentState;
-    senderWalletAddress: string;
-    senderWalletAddressId: string;
-    paymentIntentId: string;
-    assetCode: string;
-    assetScale: number;
-    createdAt: Date;
-    debitAmount: bigint;
-    receiveAmount: bigint;
-    sentAmount: bigint;
-    quoteId?: string;
-    cancelledAt?: Date;
-    cancelReason?: string;
-    ledgerTransferId?: string;
-    failReason?: string;
-  }) {
+/** Fields and transitions shared by every payment, whatever it routes over. */
+abstract class BaseSentPayment {
+  protected _id: string;
+  protected _senderWalletAddress: string;
+  protected _senderWalletAddressId: string;
+  protected _paymentIntentId: string;
+  protected _assetCode: string;
+  protected _assetScale: number;
+  protected _createdAt: Date;
+  protected _debitAmount: bigint;
+  protected _quoteId?: string;
+  protected _state: SentPaymentState;
+  protected _sentAmount: bigint;
+  protected _cancelledAt?: Date;
+  protected _cancelReason?: string;
+  protected _grantId?: string;
+  protected _metadata?: Record<string, unknown>;
+
+  protected constructor(args: BaseSentPaymentArgs) {
     this._id = args.id;
     this._state = args.state;
     this._senderWalletAddress = args.senderWalletAddress;
@@ -376,13 +362,116 @@ class SentPayment {
     this._assetScale = args.assetScale;
     this._createdAt = args.createdAt;
     this._debitAmount = args.debitAmount;
-    this._receiveAmount = args.receiveAmount;
     this._sentAmount = args.sentAmount;
     this._quoteId = args.quoteId;
     this._cancelledAt = args.cancelledAt;
     this._cancelReason = args.cancelReason;
-    this._ledgerTransferId = args.ledgerTransferId;
-    this._failReason = args.failReason;
+    this._grantId = args.grantId;
+    this._metadata = args.metadata;
+  }
+
+  abstract get destination(): PaymentIntentDestination;
+  abstract get receiveAmount(): bigint | null;
+  abstract toObject(): ISentPayment;
+
+  /** Cancellable whatever it routes over, until it is settled. */
+  cancel(reason?: string): void {
+    if (this._state === 'CANCELLED') {
+      throw new PaymentInvalidStateError(
+        `Payment ${this._id} is already cancelled`
+      );
+    }
+    if (this._state === 'COMPLETED') {
+      throw new PaymentInvalidStateError(
+        `Payment ${this._id} is already complete`
+      );
+    }
+    this._state = 'CANCELLED';
+    this._cancelledAt = new Date();
+    if (reason) {
+      this._cancelReason = reason;
+    }
+  }
+
+  protected _baseObject() {
+    return {
+      id: this._id,
+      state: this._state,
+      senderWalletAddress: this._senderWalletAddress,
+      senderWalletAddressId: this._senderWalletAddressId,
+      paymentIntentId: this._paymentIntentId,
+      assetCode: this._assetCode,
+      assetScale: this._assetScale,
+      createdAt: this._createdAt,
+      debitAmount: this._debitAmount,
+      sentAmount: this._sentAmount,
+      quoteId: this._quoteId,
+      cancelledAt: this._cancelledAt,
+      cancelReason: this._cancelReason,
+      grantId: this._grantId,
+      metadata: this._metadata
+    };
+  }
+
+  get id(): string {
+    return this._id;
+  }
+
+  get state(): SentPaymentState {
+    return this._state;
+  }
+
+  get quoteId(): string | undefined {
+    return this._quoteId;
+  }
+
+  get grantId(): string | undefined {
+    return this._grantId;
+  }
+
+  get senderWalletAddressId(): string {
+    return this._senderWalletAddressId;
+  }
+
+  get senderWalletAddress(): string {
+    return this._senderWalletAddress;
+  }
+
+  get assetCode(): string {
+    return this._assetCode;
+  }
+
+  get assetScale(): number {
+    return this._assetScale;
+  }
+
+  get debitAmount(): bigint {
+    return this._debitAmount;
+  }
+
+  get sentAmount(): bigint {
+    return this._sentAmount;
+  }
+
+  get createdAt(): Date {
+    return this._createdAt;
+  }
+
+  get metadata(): Record<string, unknown> | undefined {
+    return this._metadata;
+  }
+}
+
+/**
+ * A payment to an intent this instance also holds. It settles in one step, so
+ * it has no peer and its receiveAmount is known from the outset.
+ */
+class LocalSentPayment extends BaseSentPayment {
+  private _receiveAmount: bigint;
+
+  private constructor(args: BaseSentPaymentArgs & { receiveAmount: bigint }) {
+    super(args);
+    this._receiveAmount = args.receiveAmount;
   }
 
   static create(args: {
@@ -395,55 +484,28 @@ class SentPayment {
     debitAmount: bigint;
     receiveAmount: bigint;
     quoteId?: string;
-  }): SentPayment {
-    return new SentPayment({
+    createdAt?: Date;
+    grantId?: string;
+    metadata?: Record<string, unknown>;
+  }): LocalSentPayment {
+    return new LocalSentPayment({
       ...args,
       state: 'CREATED',
-      createdAt: new Date(),
+      createdAt: args.createdAt ?? new Date(),
       sentAmount: 0n
     });
   }
 
-  static fromObject(obj: ISentPayment): SentPayment {
-    return new SentPayment({
-      id: obj.id,
-      state: obj.state,
-      senderWalletAddress: obj.senderWalletAddress,
-      senderWalletAddressId: obj.senderWalletAddressId,
-      paymentIntentId: obj.paymentIntentId,
-      assetCode: obj.assetCode,
-      assetScale: obj.assetScale,
-      createdAt: obj.createdAt,
-      debitAmount: obj.debitAmount,
-      receiveAmount: obj.receiveAmount,
-      sentAmount: obj.sentAmount,
-      quoteId: obj.quoteId,
-      cancelledAt: obj.cancelledAt,
-      cancelReason: obj.cancelReason,
-      ledgerTransferId: obj.ledgerTransferId,
-      failReason: obj.failReason
-    });
+  static fromObject(obj: ILocalSentPayment): LocalSentPayment {
+    return new LocalSentPayment(obj);
   }
 
-  toObject(): ISentPayment {
-    return {
-      id: this._id,
-      state: this._state,
-      senderWalletAddress: this._senderWalletAddress,
-      senderWalletAddressId: this._senderWalletAddressId,
-      paymentIntentId: this._paymentIntentId,
-      assetCode: this._assetCode,
-      assetScale: this._assetScale,
-      createdAt: this._createdAt,
-      debitAmount: this._debitAmount,
-      receiveAmount: this._receiveAmount,
-      sentAmount: this._sentAmount,
-      quoteId: this._quoteId,
-      cancelledAt: this._cancelledAt,
-      cancelReason: this._cancelReason,
-      ledgerTransferId: this._ledgerTransferId,
-      failReason: this._failReason
-    };
+  get destination(): PaymentIntentDestination {
+    return 'LOCAL';
+  }
+
+  get receiveAmount(): bigint {
+    return this._receiveAmount;
   }
 
   complete(): { debitAmount: bigint; receiveAmount: bigint } {
@@ -461,6 +523,89 @@ class SentPayment {
       debitAmount: this._debitAmount,
       receiveAmount: this._receiveAmount
     };
+  }
+
+  toObject(): ILocalSentPayment {
+    return {
+      ...this._baseObject(),
+      destination: 'LOCAL',
+      receiveAmount: this._receiveAmount
+    };
+  }
+}
+
+/**
+ * A payment to an intent held by another instance. It routes through a peer
+ * and settles over several steps, so it carries the peer, the ledger transfer
+ * and a failure reason, and its receiveAmount is unknown until the peer
+ * reports it.
+ */
+class RemoteSentPayment extends BaseSentPayment {
+  private _peerId: string;
+  private _receiveAmount: bigint | null;
+  private _ledgerTransferId?: string;
+  private _failReason?: string;
+
+  private constructor(
+    args: BaseSentPaymentArgs & {
+      peerId: string;
+      receiveAmount: bigint | null;
+      ledgerTransferId?: string;
+      failReason?: string;
+    }
+  ) {
+    super(args);
+    this._peerId = args.peerId;
+    this._receiveAmount = args.receiveAmount;
+    this._ledgerTransferId = args.ledgerTransferId;
+    this._failReason = args.failReason;
+  }
+
+  static create(args: {
+    id: string;
+    senderWalletAddress: string;
+    senderWalletAddressId: string;
+    paymentIntentId: string;
+    assetCode: string;
+    assetScale: number;
+    debitAmount: bigint;
+    receiveAmount: bigint | null;
+    peerId: string;
+    quoteId?: string;
+    createdAt?: Date;
+    grantId?: string;
+    metadata?: Record<string, unknown>;
+  }): RemoteSentPayment {
+    return new RemoteSentPayment({
+      ...args,
+      state: 'CREATED',
+      createdAt: args.createdAt ?? new Date(),
+      sentAmount: 0n
+    });
+  }
+
+  static fromObject(obj: IRemoteSentPayment): RemoteSentPayment {
+    return new RemoteSentPayment(obj);
+  }
+
+  get destination(): PaymentIntentDestination {
+    return 'REMOTE';
+  }
+
+  get peerId(): string {
+    return this._peerId;
+  }
+
+  get receiveAmount(): bigint | null {
+    return this._receiveAmount;
+  }
+
+  get ledgerTransferId(): string | undefined {
+    return this._ledgerTransferId;
+  }
+
+  get failReason(): string | undefined {
+    return this._failReason;
   }
 
   approveRemoteSend(): void {
@@ -494,7 +639,7 @@ class SentPayment {
     }
   }
 
-  completeRemote(): { debitAmount: bigint; receiveAmount: bigint } {
+  completeRemote(): { debitAmount: bigint; receiveAmount: bigint | null } {
     if (this._state !== 'CONFIRMED') {
       throw new PaymentInvalidStateError(
         `Payment ${this._id} cannot complete from state ${this._state}`
@@ -529,76 +674,19 @@ class SentPayment {
     }
   }
 
-  cancel(reason?: string): void {
-    if (this._state === 'CANCELLED') {
-      throw new PaymentInvalidStateError(
-        `Payment ${this._id} is already cancelled`
-      );
-    }
-    if (this._state === 'COMPLETED') {
-      throw new PaymentInvalidStateError(
-        `Payment ${this._id} is already complete`
-      );
-    }
-    this._state = 'CANCELLED';
-    this._cancelledAt = new Date();
-    if (reason) {
-      this._cancelReason = reason;
-    }
-  }
-
-  get id(): string {
-    return this._id;
-  }
-
-  get state(): SentPaymentState {
-    return this._state;
-  }
-
-  get quoteId(): string | undefined {
-    return this._quoteId;
-  }
-
-  get senderWalletAddressId(): string {
-    return this._senderWalletAddressId;
-  }
-
-  get senderWalletAddress(): string {
-    return this._senderWalletAddress;
-  }
-
-  get assetCode(): string {
-    return this._assetCode;
-  }
-
-  get assetScale(): number {
-    return this._assetScale;
-  }
-
-  get debitAmount(): bigint {
-    return this._debitAmount;
-  }
-
-  get receiveAmount(): bigint {
-    return this._receiveAmount;
-  }
-
-  get sentAmount(): bigint {
-    return this._sentAmount;
-  }
-
-  get createdAt(): Date {
-    return this._createdAt;
-  }
-
-  get ledgerTransferId(): string | undefined {
-    return this._ledgerTransferId;
-  }
-
-  get failReason(): string | undefined {
-    return this._failReason;
+  toObject(): IRemoteSentPayment {
+    return {
+      ...this._baseObject(),
+      destination: 'REMOTE',
+      peerId: this._peerId,
+      receiveAmount: this._receiveAmount,
+      ledgerTransferId: this._ledgerTransferId,
+      failReason: this._failReason
+    };
   }
 }
+
+type SentPayment = LocalSentPayment | RemoteSentPayment;
 
 class InboundPayment {
   private _id: string;
@@ -742,7 +830,7 @@ export class PaymentIntent implements IPaymentIntent {
   private _inboundPayments: InboundPayment[] = [];
   private _destinationIlpAddress: string | undefined;
   private _remoteUrl: string | undefined;
-  private _peerId: string | undefined;
+  private _metadata: Record<string, unknown> | undefined;
 
   private constructor(
     id: string,
@@ -761,7 +849,7 @@ export class PaymentIntent implements IPaymentIntent {
     inboundPayments: InboundPayment[] = [],
     destinationIlpAddress?: string,
     remoteUrl?: string,
-    peerId?: string
+    metadata?: Record<string, unknown>
   ) {
     this._id = id;
     this._receiverWalletAddressId = receiverWalletAddressId;
@@ -781,7 +869,7 @@ export class PaymentIntent implements IPaymentIntent {
     this._expiresAt = expiresAt;
     this._destinationIlpAddress = destinationIlpAddress;
     this._remoteUrl = remoteUrl;
-    this._peerId = peerId;
+    this._metadata = metadata;
   }
 
   static create(
@@ -795,7 +883,8 @@ export class PaymentIntent implements IPaymentIntent {
     incomingAmount: bigint | null = null,
     receivedAmount: bigint = 0n,
     destinationIlpAddress?: string,
-    remoteUrl?: string
+    remoteUrl?: string,
+    metadata?: Record<string, unknown>
   ): PaymentIntent {
     if (destination === 'LOCAL' && !receiverWalletAddressId) {
       throw new InvalidPaymentIntentError(
@@ -839,7 +928,8 @@ export class PaymentIntent implements IPaymentIntent {
       undefined,
       undefined,
       destinationIlpAddress,
-      remoteUrl
+      remoteUrl,
+      metadata
     );
   }
 
@@ -857,11 +947,15 @@ export class PaymentIntent implements IPaymentIntent {
       obj.receivedAmount,
       obj.state,
       obj.quotes.map((q) => Quote.fromObject(q)),
-      obj.sentPayments.map((p) => SentPayment.fromObject(p)),
+      obj.sentPayments.map((p) =>
+        p.destination === 'LOCAL'
+          ? LocalSentPayment.fromObject(p)
+          : RemoteSentPayment.fromObject(p)
+      ),
       obj.inboundPayments.map((rp) => InboundPayment.fromObject(rp)),
       obj.destinationIlpAddress,
       obj.remoteUrl,
-      obj.peerId
+      obj.metadata
     );
   }
 
@@ -883,7 +977,7 @@ export class PaymentIntent implements IPaymentIntent {
       inboundPayments: this._inboundPayments.map((rp) => rp.toObject()),
       destinationIlpAddress: this._destinationIlpAddress,
       remoteUrl: this._remoteUrl,
-      peerId: this._peerId
+      metadata: this._metadata
     };
   }
 
@@ -898,13 +992,15 @@ export class PaymentIntent implements IPaymentIntent {
       assetCode: string;
       assetScale: number;
     };
+    createdAt?: Date;
   }): ICompletedQuote {
     const {
       id,
       debitAmount,
       receiveAmount,
       senderWalletAddress,
-      exchangeRate: unscaledExchangeRate
+      exchangeRate: unscaledExchangeRate,
+      createdAt
     } = args;
 
     if (this.state !== 'CREATED') {
@@ -952,19 +1048,20 @@ export class PaymentIntent implements IPaymentIntent {
       );
     }
 
-    const quote = Quote.createPending(
+    const quote = Quote.createPending({
       id,
-      senderWalletAddress.address,
-      senderWalletAddress.id
-    );
-    quote.complete({
+      senderWalletAddress: senderWalletAddress.address,
+      senderWalletAddressId: senderWalletAddress.id,
+      createdAt: createdAt ?? new Date()
+    });
+    const completed = quote.complete({
       debitAmount: quoteDebitAmount,
       receiveAmount: quoteReceiveAmount,
       exchangeRate,
       paymentIntentExpiresAt: this.expiresAt
     });
     this._quotes.push(quote);
-    return quote.toObject() as ICompletedQuote;
+    return completed;
   }
 
   addPendingRemoteQuote(args: {
@@ -981,6 +1078,7 @@ export class PaymentIntent implements IPaymentIntent {
     sourceAmount: bigint;
     debitAmount?: bigint;
     receiveAmount?: bigint;
+    createdAt?: Date;
   }): IPendingQuote {
     const {
       id,
@@ -989,7 +1087,8 @@ export class PaymentIntent implements IPaymentIntent {
       peerAssetCode,
       peerAssetScale,
       sourceAmount,
-      debitAmount
+      debitAmount,
+      createdAt
     } = args;
     const senderAssetCode = senderWalletAddress.assetCode;
     const receiveAmount =
@@ -1019,20 +1118,20 @@ export class PaymentIntent implements IPaymentIntent {
       );
     }
 
-    this._peerId = peerId;
-
-    const quote = Quote.createPending(
+    const quote = Quote.createPending({
       id,
-      senderWalletAddress.address,
-      senderWalletAddress.id,
-      peerId,
-      peerAssetCode,
-      peerAssetScale,
-      sourceAmount,
-      senderAssetCode,
-      debitAmount,
-      receiveAmount
-    );
+      senderWalletAddress: senderWalletAddress.address,
+      senderWalletAddressId: senderWalletAddress.id,
+      createdAt: createdAt ?? new Date(),
+      route: {
+        peerId,
+        peerAssetCode,
+        peerAssetScale,
+        sourceAmount,
+        senderAssetCode
+      },
+      request: { debitAmount, receiveAmount }
+    });
     this._quotes.push(quote);
     return quote.toObject() as IPendingQuote;
   }
@@ -1057,12 +1156,11 @@ export class PaymentIntent implements IPaymentIntent {
       );
     }
 
-    quote.completeRemote({
+    return quote.completeRemote({
       receiveAmountValue,
       fxRate,
       paymentIntentExpiresAt: this.expiresAt
     });
-    return quote.toObject() as ICompletedQuote;
   }
 
   failRemoteQuote(args: {
@@ -1104,9 +1202,16 @@ export class PaymentIntent implements IPaymentIntent {
     return BigInt(Math.floor(Number(sourceAmount) * fxRate * 10 ** scaleDiff));
   }
 
+  /**
+   * Adds a payment against a local intent. The amounts come from a completed
+   * quote when `quoteId` is given; otherwise from `debitAmount`, converted at
+   * the intra-ASE rate; otherwise from the intent's own `incomingAmount`. One
+   * of the three must be available.
+   */
   addLocalPayment(args: {
     id: string;
     quoteId?: string;
+    grantId?: string;
     senderWalletAddress: {
       id: string;
       address: string;
@@ -1115,13 +1220,24 @@ export class PaymentIntent implements IPaymentIntent {
     };
     exchangeRate: number;
     debitAmount?: bigint;
-  }): ISentPayment {
+    createdAt?: Date;
+    metadata?: Record<string, unknown>;
+  }): ILocalSentPayment {
+    if (this._destination !== 'LOCAL') {
+      throw new PaymentIntentInvalidState(
+        'Payment intent destination must be local'
+      );
+    }
+
     const {
       id,
       senderWalletAddress,
       quoteId,
+      grantId,
       debitAmount,
-      exchangeRate: unscaledExchangeRate
+      exchangeRate: unscaledExchangeRate,
+      createdAt,
+      metadata
     } = args;
 
     if (this.state !== 'CREATED') {
@@ -1205,7 +1321,7 @@ export class PaymentIntent implements IPaymentIntent {
       );
     }
 
-    const payment = SentPayment.create({
+    const payment = LocalSentPayment.create({
       id,
       senderWalletAddress: senderWalletAddress.address,
       senderWalletAddressId: senderWalletAddress.id,
@@ -1214,25 +1330,18 @@ export class PaymentIntent implements IPaymentIntent {
       assetScale: senderWalletAddress.assetScale,
       debitAmount: paymentDebitAmount,
       receiveAmount: paymentReceiveAmount,
-      quoteId
+      quoteId,
+      createdAt,
+      grantId,
+      metadata
     });
 
     this._sentPayments.push(payment);
     return payment.toObject();
   }
 
-  addRemotePayment(args: {
-    id: string;
-    quoteId: string;
-    senderWalletAddress: {
-      id: string;
-      address: string;
-      assetCode: string;
-      assetScale: number;
-    };
-  }): ISentPayment {
-    const { id, quoteId, senderWalletAddress } = args;
-
+  /** Shared invariants for adding any remote payment to this intent. */
+  private _assertCanAddRemotePayment(paymentId: string): void {
     if (this._destination !== 'REMOTE') {
       throw new PaymentIntentInvalidState(
         'Payment intent destination must be remote'
@@ -1251,11 +1360,124 @@ export class PaymentIntent implements IPaymentIntent {
       );
     }
 
-    if (this._sentPayments.find((payment) => payment.id === id)) {
+    if (this._sentPayments.find((payment) => payment.id === paymentId)) {
       throw new InvalidPaymentIdError(
-        `Duplicate payment id ${id} exists for ${this.id} payment intent`
+        `Duplicate payment id ${paymentId} exists for ${this.id} payment intent`
       );
     }
+  }
+
+  private _assertQuoteRoute(quote: IQuote): IQuoteRoute {
+    if (!quote.route) {
+      throw new InvalidQuoteStateError(
+        `Quote ${quote.id} has no route; cannot create a remote payment from it`
+      );
+    }
+    return quote.route;
+  }
+
+  private _findPayment(id: string): SentPayment {
+    const payment = this._sentPayments.find((p) => p.id === id);
+    if (!payment) {
+      throw new PaymentNotFoundError(
+        `Payment ${id} not found for ${this.id} payment intent`
+      );
+    }
+    return payment;
+  }
+
+  /** Narrows to the remote lifecycle, which the remote transitions require. */
+  private _findRemotePayment(id: string): RemoteSentPayment {
+    const payment = this._findPayment(id);
+    if (!(payment instanceof RemoteSentPayment)) {
+      throw new PaymentInvalidStateError(
+        `Payment ${id} is not a remote payment`
+      );
+    }
+    return payment;
+  }
+
+  /** Narrows to the local lifecycle, which settles in a single step. */
+  private _findLocalPayment(id: string): LocalSentPayment {
+    const payment = this._findPayment(id);
+    if (!(payment instanceof LocalSentPayment)) {
+      throw new PaymentInvalidStateError(
+        `Payment ${id} is not a local payment`
+      );
+    }
+    return payment;
+  }
+
+  /**
+   * Adds a remote payment without a quote (fixed-send). The caller provides
+   * the debit amount and the peer resolved from the intent's destination ILP
+   * address (a quote would otherwise have bound the peer). The receive amount
+   * remains unknown (`null`) because the receiver's conversion rate cannot be
+   * known without a quote probe.
+   */
+  addRemotePayment(args: {
+    id: string;
+    senderWalletAddress: {
+      id: string;
+      address: string;
+      assetCode: string;
+      assetScale: number;
+    };
+    debitAmount: bigint;
+    peerId: string;
+    createdAt?: Date;
+    grantId?: string;
+    metadata?: Record<string, unknown>;
+  }): IRemoteSentPayment {
+    const {
+      id,
+      senderWalletAddress,
+      debitAmount,
+      peerId,
+      createdAt,
+      grantId,
+      metadata
+    } = args;
+
+    this._assertCanAddRemotePayment(id);
+
+    const payment = RemoteSentPayment.create({
+      id,
+      senderWalletAddress: senderWalletAddress.address,
+      senderWalletAddressId: senderWalletAddress.id,
+      paymentIntentId: this.id,
+      assetCode: senderWalletAddress.assetCode,
+      assetScale: senderWalletAddress.assetScale,
+      debitAmount,
+      receiveAmount: null,
+      createdAt,
+      grantId,
+      metadata,
+      peerId
+    });
+
+    this._sentPayments.push(payment);
+    return payment.toObject();
+  }
+
+  /** Adds a remote payment whose amounts come from a completed quote. */
+  addRemotePaymentFromQuote(args: {
+    id: string;
+    quoteId: string;
+    senderWalletAddress: {
+      id: string;
+      address: string;
+      assetCode: string;
+      assetScale: number;
+    };
+    createdAt?: Date;
+    grantId?: string;
+    metadata?: Record<string, unknown>;
+  }): IRemoteSentPayment {
+    const { id, quoteId, senderWalletAddress, createdAt, grantId, metadata } =
+      args;
+
+    this._assertCanAddRemotePayment(id);
 
     const quote = this.quotes.find((q) => q.id === quoteId);
     if (!quote) {
@@ -1293,7 +1515,7 @@ export class PaymentIntent implements IPaymentIntent {
       );
     }
 
-    const payment = SentPayment.create({
+    const payment = RemoteSentPayment.create({
       id,
       senderWalletAddress: senderWalletAddress.address,
       senderWalletAddressId: senderWalletAddress.id,
@@ -1302,14 +1524,19 @@ export class PaymentIntent implements IPaymentIntent {
       assetScale: senderWalletAddress.assetScale,
       debitAmount: quote.debitAmount,
       receiveAmount: quote.receiveAmount,
-      quoteId
+      quoteId,
+      createdAt,
+      grantId,
+      metadata,
+      // remote quote should always have peerId
+      peerId: this._assertQuoteRoute(quote).peerId
     });
 
     this._sentPayments.push(payment);
     return payment.toObject();
   }
 
-  approveRemotePaymentSend(args: { id: string }): ISentPayment {
+  approveRemotePaymentSend(args: { id: string }): IRemoteSentPayment {
     const { id } = args;
 
     if (this._destination !== 'REMOTE') {
@@ -1330,12 +1557,7 @@ export class PaymentIntent implements IPaymentIntent {
       );
     }
 
-    const payment = this._sentPayments.find((p) => p.id === id);
-    if (!payment) {
-      throw new PaymentNotFoundError(
-        `Payment ${id} not found for ${this.id} payment intent`
-      );
-    }
+    const payment = this._findRemotePayment(id);
 
     payment.approveRemoteSend();
     return payment.toObject();
@@ -1344,57 +1566,40 @@ export class PaymentIntent implements IPaymentIntent {
   prepareRemotePayment(args: {
     id: string;
     ledgerTransferId: string;
-  }): ISentPayment {
+  }): IRemoteSentPayment {
     const { id, ledgerTransferId } = args;
 
-    const payment = this._sentPayments.find((p) => p.id === id);
-    if (!payment) {
-      throw new PaymentNotFoundError(
-        `Payment ${id} not found for ${this.id} payment intent`
-      );
-    }
+    const payment = this._findRemotePayment(id);
 
     payment.prepare(ledgerTransferId);
     return payment.toObject();
   }
 
-  failRemotePayment(args: { id: string; reason?: string }): ISentPayment {
+  failRemotePayment(args: { id: string; reason?: string }): IRemoteSentPayment {
     const { id, reason } = args;
 
-    const payment = this._sentPayments.find((p) => p.id === id);
-    if (!payment) {
-      throw new PaymentNotFoundError(
-        `Payment ${id} not found for ${this.id} payment intent`
-      );
-    }
+    const payment = this._findRemotePayment(id);
 
     payment.failRemote(reason);
     return payment.toObject();
   }
 
-  confirmRemotePayment(args: { id: string }): ISentPayment {
+  confirmRemotePayment(args: { id: string }): IRemoteSentPayment {
     const { id } = args;
 
-    const payment = this._sentPayments.find((p) => p.id === id);
-    if (!payment) {
-      throw new PaymentNotFoundError(
-        `Payment ${id} not found for ${this.id} payment intent`
-      );
-    }
+    const payment = this._findRemotePayment(id);
 
     payment.confirm();
     return payment.toObject();
   }
 
-  rejectRemotePayment(args: { id: string; reason?: string }): ISentPayment {
+  rejectRemotePayment(args: {
+    id: string;
+    reason?: string;
+  }): IRemoteSentPayment {
     const { id, reason } = args;
 
-    const payment = this._sentPayments.find((p) => p.id === id);
-    if (!payment) {
-      throw new PaymentNotFoundError(
-        `Payment ${id} not found for ${this.id} payment intent`
-      );
-    }
+    const payment = this._findRemotePayment(id);
 
     payment.reject(reason);
     return payment.toObject();
@@ -1422,23 +1627,21 @@ export class PaymentIntent implements IPaymentIntent {
     this._state = 'COMPLETED';
   }
 
-  completeRemotePayment(args: { id: string }): ISentPayment {
+  completeRemotePayment(args: { id: string }): IRemoteSentPayment {
     const { id } = args;
 
-    const payment = this._sentPayments.find((p) => p.id === id);
-    if (!payment) {
-      throw new PaymentNotFoundError(
-        `Payment ${id} not found for ${this.id} payment intent`
-      );
-    }
+    const payment = this._findRemotePayment(id);
 
     const { receiveAmount } = payment.completeRemote();
-    this._receivedAmount += receiveAmount;
+    // Quoteless payments have no receiveAmount. The receiver's ASE must determine that.
+    if (receiveAmount !== null) {
+      this._receivedAmount += receiveAmount;
+    }
 
     return payment.toObject();
   }
 
-  completeLocalPayment(args: { id: string }): ISentPayment {
+  completeLocalPayment(args: { id: string }): ILocalSentPayment {
     const { id } = args;
 
     if (this.state !== 'CREATED') {
@@ -1453,12 +1656,7 @@ export class PaymentIntent implements IPaymentIntent {
       );
     }
 
-    const payment = this._sentPayments.find((p) => p.id === id);
-    if (!payment) {
-      throw new PaymentNotFoundError(
-        `Payment ${id} not found for ${this.id} payment intent`
-      );
-    }
+    const payment = this._findLocalPayment(id);
 
     // TODO: determine if we want to allow paying more than the incomingAmount.
     // For now, the logic is that we allow overpaying the incomingAmount once.
@@ -1605,12 +1803,8 @@ export class PaymentIntent implements IPaymentIntent {
   cancelPayment(args: { id: string; reason?: string }): void {
     const { id, reason } = args;
 
-    const payment = this._sentPayments.find((payment) => payment.id === id);
-    if (!payment) {
-      throw new PaymentNotFoundError(
-        `Payment ${id} not found for ${this.id} payment intent`
-      );
-    }
+    // cancel() is on the base: cancellable whatever it routes over
+    const payment = this._findPayment(id);
 
     payment.cancel(reason);
   }
@@ -1678,6 +1872,17 @@ export class PaymentIntent implements IPaymentIntent {
     return this._sentPayments.map((p) => p.toObject());
   }
 
+  /** Only the payments routing through a peer, for the remote transitions. */
+  get remoteSentPayments(): IRemoteSentPayment[] {
+    const remote: IRemoteSentPayment[] = [];
+    for (const payment of this._sentPayments) {
+      if (payment instanceof RemoteSentPayment) {
+        remote.push(payment.toObject());
+      }
+    }
+    return remote;
+  }
+
   get inboundPayments(): IInboundPayment[] {
     return this._inboundPayments.map((rp) => rp.toObject());
   }
@@ -1690,7 +1895,7 @@ export class PaymentIntent implements IPaymentIntent {
     return this._remoteUrl;
   }
 
-  get peerId(): string | undefined {
-    return this._peerId;
+  get metadata(): Record<string, unknown> | undefined {
+    return this._metadata;
   }
 }

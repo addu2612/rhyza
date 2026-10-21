@@ -1,0 +1,17 @@
+meta {
+  name: Quoteless Remote Payment
+  seq: 2
+}
+
+auth {
+  mode: inherit
+}
+
+docs {
+  Remote payment with no client-side quote: Setup (Admin, idempotent) →
+  incoming payment on Node B → outgoing payment on Node A from the incoming
+  payment URL plus a debitAmount → Verify on both nodes.
+
+  The server still quotes internally to populate `receiveAmount`; "quoteless"
+  describes the client's side of the exchange only.
+}

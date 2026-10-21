@@ -1,0 +1,26 @@
+---
+title: Wallet addresses
+next: Integration overview
+tableOfContents: false
+---
+
+import { LinkOut } from '@interledger/docs-design-system'
+
+A wallet address is a secure, unique URL of a payment account that supports Open Payments.
+
+```bash title="Example"
+https://wallet.example.com/alice
+```
+
+The address acts as an entry point to the Open Payments resource server, facilitating interactions with clients. For example, to send and receive payments.
+
+Financial service providers (FSPs) are responsible for:
+
+- Setting a base wallet address
+- Establishing a wallet address structure/naming convention
+  :::note
+  Consider whether the chosen structure could disclose personal data.
+  :::
+- Creating wallet addresses for each of their customers' payment accounts
+
+Details are supplied in the [Integration guide](/integration#wallet-addresses). Supplemental information is available on the <LinkOut href="https://openpayments.dev/implement/wallet-address-architecture/">Open Payments site</LinkOut>.

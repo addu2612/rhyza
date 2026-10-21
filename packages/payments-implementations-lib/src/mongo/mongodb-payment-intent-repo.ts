@@ -5,7 +5,10 @@ import {
   InvalidCursorError,
   IPage,
   IPageOpts,
+  IStoredSentPayment,
   ISentPayment,
+  isRemoteSentPayment,
+  PaymentIntentDestination,
   IPaymentIntent,
   IPaymentIntentRepository,
   IInboundPayment,
@@ -22,6 +25,37 @@ const SENT_PAYMENTS_COLLECTION_NAME = 'sentPayments';
 const INBOUND_PAYMENTS_COLLECTION_NAME = 'inboundPayments';
 const TIMEOUT_MS = 5_000;
 
+/**
+ * Turns a stored row into the domain object by supplying the parent intent's
+ * destination, which rows do not carry, and asserting what each arm needs.
+ * Spreading the rest means a newly stored field cannot be forgotten here.
+ */
+function toSentPayment(
+  row: IStoredSentPayment,
+  destination: PaymentIntentDestination
+): ISentPayment {
+  const { peerId, ledgerTransferId, failReason, receiveAmount, ...base } = row;
+
+  if (destination === 'REMOTE') {
+    if (!peerId) {
+      throw new Error(`Stored remote payment ${row.id} has no peerId`);
+    }
+    return {
+      ...base,
+      destination: 'REMOTE',
+      peerId,
+      receiveAmount,
+      ledgerTransferId,
+      failReason
+    };
+  }
+
+  if (receiveAmount === null) {
+    throw new Error(`Stored local payment ${row.id} has no receiveAmount`);
+  }
+  return { ...base, destination: 'LOCAL', receiveAmount };
+}
+
 export class MongoDbPaymentIntentRepo implements IPaymentIntentRepository {
   private readonly _connectionString: string;
   private readonly _logger: ILogger;
@@ -29,7 +63,7 @@ export class MongoDbPaymentIntentRepo implements IPaymentIntentRepository {
   private _paymentIntentCollection!: Collection<
     Omit<IPaymentIntent, 'sentPayments' | 'inboundPayments'>
   >;
-  private _sentPaymentCollection!: Collection<ISentPayment>;
+  private _sentPaymentCollection!: Collection<IStoredSentPayment>;
   private _inboundPaymentCollection!: Collection<IInboundPayment>;
 
   constructor(connectionString: string, logger: ILogger) {
@@ -93,13 +127,14 @@ export class MongoDbPaymentIntentRepo implements IPaymentIntentRepository {
       );
       // load or create the collection (and add its indexes) - should check version and perform migrations
       if (paymentsCollectionExists) {
-        this._sentPaymentCollection = db.collection<ISentPayment>(
+        this._sentPaymentCollection = db.collection<IStoredSentPayment>(
           SENT_PAYMENTS_COLLECTION_NAME
         );
       } else {
-        this._sentPaymentCollection = await db.createCollection<ISentPayment>(
-          SENT_PAYMENTS_COLLECTION_NAME
-        );
+        this._sentPaymentCollection =
+          await db.createCollection<IStoredSentPayment>(
+            SENT_PAYMENTS_COLLECTION_NAME
+          );
         await this._sentPaymentCollection.createIndex(
           { id: 1 },
           { unique: true }
@@ -178,9 +213,9 @@ export class MongoDbPaymentIntentRepo implements IPaymentIntentRepository {
               incomingAmount: p.incomingAmount,
               receivedAmount: p.receivedAmount,
               destinationIlpAddress: p.destinationIlpAddress,
-              peerId: p.peerId,
               quotes: p.quotes
             };
+          if (p.metadata != null) doc.metadata = p.metadata;
           if (p.remoteUrl != null) doc.remoteUrl = p.remoteUrl;
           return doc;
         })
@@ -247,8 +282,8 @@ export class MongoDbPaymentIntentRepo implements IPaymentIntentRepository {
         receivedAmount: doc.receivedAmount,
         destinationIlpAddress: doc.destinationIlpAddress,
         remoteUrl: doc.remoteUrl,
-        peerId: doc.peerId,
-        quotes: doc.quotes.map((quote) => ({ ...quote }))
+        quotes: doc.quotes.map((quote) => ({ ...quote })),
+        metadata: doc.metadata
       }));
     } catch (err) {
       this._logger.error(err);
@@ -268,7 +303,7 @@ export class MongoDbPaymentIntentRepo implements IPaymentIntentRepository {
         await Promise.all([
           this._paymentIntentCollection.find({ id: { $in: ids } }).toArray(),
           this._sentPaymentCollection
-            .find({ paymentIntentId: { $in: ids } })
+            .find({ paymentIntentId: { $in: ids } }, { projection: { _id: 0 } })
             .toArray(),
           this._inboundPaymentCollection
             .find({ paymentIntentId: { $in: ids } })
@@ -289,31 +324,14 @@ export class MongoDbPaymentIntentRepo implements IPaymentIntentRepository {
         receivedAmount: doc.receivedAmount,
         destinationIlpAddress: doc.destinationIlpAddress,
         remoteUrl: doc.remoteUrl,
-        peerId: doc.peerId,
         // Faithfully round-trip whatever the entity persisted for each quote.
         // Do NOT re-project by state — that silently drops fields (e.g. a
         // pending remote quote's peer/source/sender fields).
         quotes: doc.quotes.map((quote) => ({ ...quote })),
+        metadata: doc.metadata,
         sentPayments: paymentDocs
           .filter((p) => p.paymentIntentId === doc.id)
-          .map((payment) => ({
-            id: payment.id,
-            state: payment.state,
-            createdAt: payment.createdAt,
-            paymentIntentId: payment.paymentIntentId,
-            senderWalletAddress: payment.senderWalletAddress,
-            senderWalletAddressId: payment.senderWalletAddressId,
-            quoteId: payment.quoteId,
-            assetCode: payment.assetCode,
-            assetScale: payment.assetScale,
-            debitAmount: payment.debitAmount,
-            receiveAmount: payment.receiveAmount,
-            sentAmount: payment.sentAmount,
-            ledgerTransferId: payment.ledgerTransferId,
-            failReason: payment.failReason,
-            cancelledAt: payment.cancelledAt,
-            cancelReason: payment.cancelReason
-          })),
+          .map((payment) => toSentPayment(payment, doc.destination)),
         inboundPayments: inboundPaymentDocs
           .filter((rp) => rp.paymentIntentId === doc.id)
           .map((inboundPayment) => ({
@@ -397,8 +415,8 @@ export class MongoDbPaymentIntentRepo implements IPaymentIntentRepository {
           receivedAmount: doc.receivedAmount,
           destinationIlpAddress: doc.destinationIlpAddress,
           remoteUrl: doc.remoteUrl,
-          peerId: doc.peerId,
-          quotes: doc.quotes.map((quote) => ({ ...quote }))
+          quotes: doc.quotes.map((quote) => ({ ...quote })),
+          metadata: doc.metadata
         }))
       };
     } catch (err) {
@@ -412,7 +430,7 @@ export class MongoDbPaymentIntentRepo implements IPaymentIntentRepository {
 
   async fetchSentPaymentsPage(
     opts: IPageOpts & { paymentIntentId?: string }
-  ): Promise<IPage<ISentPayment>> {
+  ): Promise<IPage<IStoredSentPayment>> {
     this._checkInitialisedOrThrow();
 
     try {
@@ -440,6 +458,7 @@ export class MongoDbPaymentIntentRepo implements IPaymentIntentRepository {
           senderWalletAddress: payment.senderWalletAddress,
           senderWalletAddressId: payment.senderWalletAddressId,
           quoteId: payment.quoteId,
+          grantId: payment.grantId,
           assetCode: payment.assetCode,
           assetScale: payment.assetScale,
           debitAmount: payment.debitAmount,
@@ -448,7 +467,9 @@ export class MongoDbPaymentIntentRepo implements IPaymentIntentRepository {
           ledgerTransferId: payment.ledgerTransferId,
           failReason: payment.failReason,
           cancelledAt: payment.cancelledAt,
-          cancelReason: payment.cancelReason
+          cancelReason: payment.cancelReason,
+          metadata: payment.metadata,
+          peerId: payment.peerId
         }))
       };
     } catch (err) {
@@ -561,7 +582,7 @@ export class MongoDbPaymentIntentRepo implements IPaymentIntentRepository {
 
     if (paymentUpdates.length === 0) return;
 
-    const newPaymentEntities: ISentPayment[] = [];
+    const newPaymentEntities: IStoredSentPayment[] = [];
 
     for (const update of paymentUpdates) {
       const payments = update.paymentIntent.sentPayments.filter((p) =>
@@ -580,12 +601,14 @@ export class MongoDbPaymentIntentRepo implements IPaymentIntentRepository {
           assetScale: payment.assetScale,
           debitAmount: payment.debitAmount,
           quoteId: payment.quoteId ? payment.quoteId : undefined,
+          grantId: payment.grantId,
           receiveAmount: payment.receiveAmount,
-          sentAmount: payment.sentAmount
+          sentAmount: payment.sentAmount,
+          metadata: payment.metadata,
+          peerId: isRemoteSentPayment(payment) ? payment.peerId : undefined
         });
       }
     }
-
     try {
       await this._sentPaymentCollection.insertMany(newPaymentEntities);
     } catch (e) {

@@ -1,0 +1,27 @@
+meta {
+  name: Create Payment
+  type: http
+  seq: 3
+}
+
+post {
+  url: http://{{adminApiUrl}}/payments
+  body: json
+  auth: none
+}
+
+body:json {
+  {
+    "walletAddress": "sender",
+    "paymentIntentId": "{{paymentIntentId}}",
+    "quoteId": "{{quoteId}}"
+  }
+}
+
+script:post-response {
+  const body = res.getBody();
+  
+  if (body?.id) {
+    bru.setVar("paymentId", body.id);
+  }
+}

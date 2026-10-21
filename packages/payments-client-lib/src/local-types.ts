@@ -42,12 +42,26 @@ export interface IPage<T> {
   pagination: IPageInfo;
 }
 
-export type IncomingPaymentInput =
-  | { incomingPaymentId: string }
-  | { incomingPaymentUrl: string };
+/**
+ * Names the payment intent being paid: by its local id, or by its URL. The
+ * URL may address an intent on this instance — in which case the id is read
+ * out of it — or on another, which is imported on first use.
+ */
+export type PaymentIntentInput =
+  | { paymentIntentId: string }
+  | { paymentIntentUrl: string };
 
 export interface CreatePaymentIntentResult {
   id: string;
+  receiverWalletAddress: string;
+  state: string;
+  destination: string;
+  receivedAmount: bigint;
+  assetCode: string;
+  assetScale: number;
+  incomingAmount?: bigint;
+  expiresAt?: string;
+  createdAt: string;
 }
 
 export interface CompletePaymentIntentResult {
@@ -77,6 +91,13 @@ export interface CreateQuoteResult {
 
 export interface CreatePaymentResult {
   id: string;
+  /**
+   * The canonical payment intent id. Differs from the id proposed by the
+   * caller when the intent was identified by URL and deduped to one already
+   * imported, so callers must use this for subsequent calls.
+   */
+  paymentIntentId: string;
+  payment: IPayment;
 }
 
 export interface ApprovePaymentResult {
@@ -101,6 +122,7 @@ export interface GetPaymentIntentResult {
   destinationIlpAddress?: string;
   createdAt: string;
   remoteUrl?: string;
+  metadata?: Record<string, unknown>;
 }
 
 export interface GetQuoteResult {
@@ -120,7 +142,7 @@ export interface GetQuoteResult {
   message?: string;
 }
 
-export interface GetPaymentResult {
+export interface IPayment {
   id: string;
   state: string;
   senderWalletAddress: string;
@@ -129,12 +151,17 @@ export interface GetPaymentResult {
   quoteId?: string;
   /** Denominated in the sender-side asset. */
   debitAmount: IAmount;
-  /** Denominated in the receive-side asset (the parent intent's), which differs for cross-currency payments. */
-  receiveAmount: IAmount;
+  /**
+   * Denominated in the receive-side asset (the parent intent's), which differs
+   * for cross-currency payments. Null for a payment created without a quote,
+   * which fixes only the debit side.
+   */
+  receiveAmount: IAmount | null;
   /** Denominated in the sender-side asset. */
   sentAmount: IAmount;
   createdAt: string;
-  /** Parent intent's remoteUrl, set for REMOTE intents. */
-  remoteUrl?: string;
+  /** Parent intent's remote URL, set for REMOTE intents. */
+  remotePaymentIntentUrl?: string;
   failReason?: string;
+  metadata?: Record<string, unknown>;
 }

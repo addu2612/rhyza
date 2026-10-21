@@ -254,6 +254,20 @@ describe('GrantEntity', () => {
       const approved = makeContinuableGrant({ state: GrantState.APPROVED });
       transition(approved, GrantState.ISSUED);
       assert.equal(approved.state, GrantState.ISSUED);
+    });
+
+    it('allows valid transitions used by revocation', () => {
+      const pending = makeContinuableGrant({ state: GrantState.PENDING });
+      transition(pending, GrantState.REVOKED);
+      assert.equal(pending.state, GrantState.REVOKED);
+
+      const processing = makeContinuableGrant({ state: GrantState.PROCESSING });
+      transition(processing, GrantState.REVOKED);
+      assert.equal(processing.state, GrantState.REVOKED);
+
+      const approved = makeContinuableGrant({ state: GrantState.APPROVED });
+      transition(approved, GrantState.REVOKED);
+      assert.equal(approved.state, GrantState.REVOKED);
 
       const issued = makeContinuableGrant({ state: GrantState.ISSUED });
       transition(issued, GrantState.REVOKED);
@@ -1001,7 +1015,6 @@ describe('GrantEntity', () => {
         assert.throws(
           () => entity.finishInteraction(entity.interactionNonce as string),
           (err: Error) => {
-            console.log(err);
             assert(err instanceof InvalidInteractionError);
             return true;
           }

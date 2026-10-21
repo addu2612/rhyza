@@ -8,7 +8,7 @@
   },
   "keywords": [],
   "author": "",
-  "license": "ISC",
+  "license": "Apache-2.0",
   "dependencies": {
     "pal-public-types-lib": "workspace: *",
     "@grpc/grpc-js": "~1.14.3"

@@ -10,13 +10,13 @@
   },
   "keywords": [],
   "author": "",
-  "license": "ISC",
+  "license": "Apache-2.0",
   "dependencies": {
     "common-types-lib": "workspace: *",
     "implementations-lib": "workspace: *",
     "pal-domain-lib": "workspace: *",
     "pal-public-types-lib": "workspace: *",
-    "google-protobuf": "~4.0.2",
+    "google-protobuf": "catalog:",
     "ioredis": "~5.10.1",
     "mongodb": "~7.1.0"
   },

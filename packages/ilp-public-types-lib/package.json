@@ -13,11 +13,11 @@
   },
   "keywords": [],
   "author": "",
-  "license": "ISC",
+  "license": "Apache-2.0",
   "dependencies": {
     "@grpc/grpc-js": "~1.14.3",
     "@grpc/proto-loader": "~0.8.0",
-    "google-protobuf": "~4.0.1"
+    "google-protobuf": "catalog:"
   },
   "devDependencies": {
     "tsx": "^4.19.3",

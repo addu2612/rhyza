@@ -3,8 +3,8 @@ import Default from '@astrojs/starlight/components/PageSidebar.astro'
 
 const removeOverview = [
   'resources/glossary',
-  'overview/concepts/payment-pointers',
-  'overview/concepts/clearing-settlement'
+  'concepts/clearing-settlement',
+  'apis/api-overview'
 ]
 const { id, toc } = Astro.locals.starlightRoute
 const noOverview = removeOverview.includes(id)

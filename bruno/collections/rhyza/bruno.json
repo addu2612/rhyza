@@ -1,0 +1,6 @@
+{
+  "version": "1",
+  "name": "rhyza",
+  "type": "collection",
+  "ignore": ["node_modules", ".git"]
+}
