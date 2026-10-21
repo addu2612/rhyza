@@ -3,8 +3,9 @@
 import {
   ErrorResponse,
   GetQuoteRequest,
-  Quote,
-  QuoteState,
+  CompletedQuote,
+  PendingQuote,
+  FailedQuote,
   CreateQuoteRequest
 } from 'admin-client-lib';
 import { randomUUID } from 'crypto';
@@ -23,62 +24,75 @@ interface QuoteRouteOptions extends FastifyPluginOptions {
   paymentsClient: PaymentsClient;
 }
 
-function toQuoteBody(result: CreateQuoteResult | GetQuoteResult): Quote {
-  // CreateQuoteResult has no state but a successful create quote is always in a COMPLETED state
-  const quote: GetQuoteResult = {
-    ...result,
+function toQuoteBody(
+  result: GetQuoteResult | CreateQuoteResult
+): CompletedQuote | PendingQuote | FailedQuote {
+  const base = {
+    id: result.id,
+    paymentIntentId: result.paymentIntentId,
+    senderWalletAddress: result.senderWalletAddress,
+    senderWalletAddressId: result.senderWalletAddressId,
+    createdAt: new Date(result.createdAt),
     state: 'state' in result ? result.state : 'COMPLETED'
   };
 
-  const body: Quote = {
-    id: quote.id,
-    paymentIntentId: quote.paymentIntentId,
-    senderWalletAddress: quote.senderWalletAddress,
-    senderWalletAddressId: quote.senderWalletAddressId,
-    createdAt: new Date(quote.createdAt),
-    state: quote.state as QuoteState
-  };
-
-  switch (quote.state) {
-    case 'COMPLETED':
-      if (quote.expiresAt !== undefined) {
-        body.expiresAt = new Date(quote.expiresAt);
+  switch (base.state) {
+    case 'COMPLETED': {
+      const completed: CompletedQuote = {
+        ...base,
+        state: 'COMPLETED'
+      };
+      if (result.expiresAt !== undefined) {
+        completed.expiresAt = new Date(result.expiresAt);
       }
-      if (quote.debitAmount !== undefined) {
-        body.debitAmount = String(quote.debitAmount);
+      if (result.debitAmount !== undefined) {
+        completed.debitAmount = String(result.debitAmount);
       }
-      if (quote.receiveAmount !== undefined) {
-        body.receiveAmount = String(quote.receiveAmount);
+      if (result.receiveAmount !== undefined) {
+        completed.receiveAmount = String(result.receiveAmount);
       }
-      if (quote.exchangeRate !== undefined) {
-        body.exchangeRate = quote.exchangeRate;
+      if (result.exchangeRate !== undefined) {
+        completed.exchangeRate = result.exchangeRate;
       }
-      break;
-    case 'PENDING':
-      if (quote.debitAmount !== undefined) {
-        body.debitAmount = String(quote.debitAmount);
+      return completed;
+    }
+    case 'PENDING': {
+      result = result as GetQuoteResult;
+      const pending: PendingQuote = {
+        ...base,
+        state: 'PENDING'
+      };
+      if (result.debitAmount !== undefined) {
+        pending.debitAmount = String(result.debitAmount);
       }
-      if (quote.receiveAmount !== undefined) {
-        body.receiveAmount = String(quote.receiveAmount);
+      if (result.receiveAmount !== undefined) {
+        pending.receiveAmount = String(result.receiveAmount);
       }
-      if (quote.sourceAmount !== undefined) {
-        body.sourceAmount = String(quote.sourceAmount);
+      if (result.sourceAmount !== undefined) {
+        pending.sourceAmount = String(result.sourceAmount);
       }
-      if (quote.senderAssetCode !== undefined) {
-        body.senderAssetCode = quote.senderAssetCode;
+      if (result.senderAssetCode !== undefined) {
+        pending.senderAssetCode = result.senderAssetCode;
       }
-      break;
-    case 'FAILED':
-      if (quote.errorName !== undefined) {
-        body.errorName = quote.errorName;
+      return pending;
+    }
+    case 'FAILED': {
+      result = result as GetQuoteResult;
+      const failed: FailedQuote = {
+        ...base,
+        state: 'FAILED'
+      };
+      if (result.errorName !== undefined) {
+        failed.errorName = result.errorName;
       }
-      if (quote.message !== undefined) {
-        body.message = quote.message;
+      if (result.message !== undefined) {
+        failed.message = result.message;
       }
-      break;
+      return failed;
+    }
+    default:
+      throw new Error(`Unexpected quote state: ${base.state}`);
   }
-
-  return body;
 }
 
 export async function quoteRoutes(
@@ -89,7 +103,7 @@ export async function quoteRoutes(
 
   server.post<{
     Body: CreateQuoteRequest;
-    Reply: Quote | ErrorResponse;
+    Reply: CompletedQuote | ErrorResponse;
   }>('/quotes', async (request, reply) => {
     const { walletAddress, debitAmount, receiveAmount } = request.body;
     const paymentIntent =
@@ -116,7 +130,7 @@ export async function quoteRoutes(
         debitAmount ? Number(debitAmount) : undefined,
         receiveAmount ? Number(receiveAmount) : undefined
       );
-      return reply.status(201).send(toQuoteBody(result));
+      return reply.status(201).send(toQuoteBody(result) as CompletedQuote);
     } catch (err) {
       server.log.error(err);
       const httpStatus = httpStatusFromGrpcError(err);
@@ -127,7 +141,7 @@ export async function quoteRoutes(
 
   server.get<{
     Params: GetQuoteRequest;
-    Reply: Quote | ErrorResponse;
+    Reply: CompletedQuote | PendingQuote | FailedQuote | ErrorResponse;
   }>('/payment-intents/:intentId/quotes/:id', async (request, reply) => {
     const { intentId, id } = request.params;
 
