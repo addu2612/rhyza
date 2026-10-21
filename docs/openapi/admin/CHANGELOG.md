@@ -1,10 +1,18 @@
-# API Changelog 0.0.13 vs. 0.0.14
+# API Changelog 0.0.14 vs. 0.0.15
 
 
 ## API Changes
 
 ### POST /grant/{id}
 -  endpoint added
+
+# API Changelog 0.0.13 vs. 0.0.14
+
+## API Changes
+
+### POST /peers/{id}/deactivate
+
+- endpoint added
 
 # API Changelog 0.0.12 vs. 0.0.13
 
