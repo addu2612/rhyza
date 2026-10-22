@@ -711,32 +711,31 @@ export class GrantEntity implements IGrant {
     const { receiveAmountValue, debitAmountValue, createdAt } = input;
 
     const { limits } = outgoingPaymentAccessItem;
-    if (!limits) {
-      debitAmountValue &&
-        (this._spentAmounts.total.debit += BigInt(debitAmountValue));
-      receiveAmountValue &&
-        (this._spentAmounts.total.receive += BigInt(receiveAmountValue));
-      return this._spentAmounts;
-    }
-
     if (debitAmountValue) {
-      this.validateSpentAmount(
-        'debit',
-        debitAmountValue,
-        createdAt,
-        limits.debitAmount
-      );
-      this.updateSpentAmount('debit', debitAmountValue, createdAt);
+      if (!limits) this._spentAmounts.total.debit += BigInt(debitAmountValue);
+      else {
+        this.validateSpentAmount(
+          'debit',
+          debitAmountValue,
+          createdAt,
+          limits.debitAmount
+        );
+        this.updateSpentAmount('debit', debitAmountValue, createdAt);
+      }
     }
 
     if (receiveAmountValue) {
-      this.validateSpentAmount(
-        'receive',
-        receiveAmountValue,
-        createdAt,
-        limits.receiveAmount
-      );
-      this.updateSpentAmount('receive', receiveAmountValue, createdAt);
+      if (!limits)
+        this._spentAmounts.total.receive += BigInt(receiveAmountValue);
+      else {
+        this.validateSpentAmount(
+          'receive',
+          receiveAmountValue,
+          createdAt,
+          limits.receiveAmount
+        );
+        this.updateSpentAmount('receive', receiveAmountValue, createdAt);
+      }
     }
 
     return this._spentAmounts;
