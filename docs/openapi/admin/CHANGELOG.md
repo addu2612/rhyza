@@ -1,10 +1,10 @@
 # API Changelog 0.0.14 vs. 0.0.15
 
-
 ## API Changes
 
 ### POST /grant/{id}
--  endpoint added
+
+- endpoint added
 
 # API Changelog 0.0.13 vs. 0.0.14
 
@@ -128,11 +128,13 @@ No changes to report, but the specs are different
 ## API Changes
 
 ### GET /grant/{id}
--  endpoint added
+
+- endpoint added
 
 # API Changelog 0.0.4 vs. 0.0.5
 
 ## API Changes
+
 ### POST /liquidity/deposit
 
 - :warning: added the new required request property `amountScale`
