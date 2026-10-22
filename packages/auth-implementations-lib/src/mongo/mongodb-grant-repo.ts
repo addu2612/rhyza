@@ -1,4 +1,4 @@
-import { Collection, CollectionInfo, Db, MongoClient, WithId } from 'mongodb';
+import { Collection, CollectionInfo, Db, MongoClient } from 'mongodb';
 import {
   IAccessToken,
   IGrant,
@@ -117,10 +117,7 @@ export class MongoDbGrantRepo implements IGrantRepository {
     await this._client.close();
   }
 
-  private _docToGrant(
-    doc: WithId<GrantDoc>,
-    tokenDocs: AccessTokenDoc[]
-  ): IGrant {
+  private _docToGrant(doc: GrantDoc, tokenDocs: AccessTokenDoc[]): IGrant {
     return {
       id: doc.id,
       createdAt: doc.createdAt,

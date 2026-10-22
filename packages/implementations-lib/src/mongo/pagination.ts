@@ -1,4 +1,4 @@
-import { Collection, Filter, WithId } from 'mongodb';
+import { Collection, Filter } from 'mongodb';
 import {
   DEFAULT_SORT_ORDER,
   InvalidArgument,
@@ -15,14 +15,14 @@ import {
  * caller supplies its own `filter`, so only the cursor mechanics live here —
  * which is the part that is subtle and the part that has to agree everywhere.
  *
- * Documents come back as `WithId`, which is what the driver returns for an
- * unprojected query. Callers map the fields they want and ignore `_id`.
+ * `_id` is projected away: nothing above this layer uses Mongo's own key, so
+ * the documents are returned as `T` rather than the driver's `WithId<T>`.
  */
 export async function fetchPageDocs<T extends { id: string; createdAt: Date }>(
   collection: Collection<T>,
   filter: Record<string, unknown>,
   opts: IPageOpts
-): Promise<IPage<WithId<T>>> {
+): Promise<IPage<T>> {
   const { cursor, limit, backwards } = opts;
   if (!Number.isInteger(limit) || limit < 1) {
     throw new InvalidArgument(`limit must be a positive integer, got ${limit}`);
@@ -54,10 +54,10 @@ export async function fetchPageDocs<T extends { id: string; createdAt: Date }>(
     : {};
 
   const docs = (await collection
-    .find({ ...filter, ...range } as Filter<T>)
+    .find({ ...filter, ...range } as Filter<T>, { projection: { _id: 0 } })
     .sort(scanAscending ? { createdAt: 1, id: 1 } : { createdAt: -1, id: -1 })
     .limit(limit + 1)
-    .toArray()) as WithId<T>[];
+    .toArray()) as T[];
 
   const hasMore = docs.length > limit;
   const items = docs.slice(0, limit);
