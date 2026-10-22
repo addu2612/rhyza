@@ -134,7 +134,7 @@ export async function incomingPaymentRoutes(
         paymentIntent = await paymentsClient.createPaymentIntent(
           id,
           walletAddress.id,
-          walletAddressUrl,
+          pathName,
           incomingAmount ? Number(incomingAmount.value) : undefined,
           expiresAt,
           metadata
