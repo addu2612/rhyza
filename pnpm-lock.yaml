@@ -294,6 +294,9 @@ importers:
       common-types-lib:
         specifier: workspace:*
         version: link:../common-types-lib
+      implementations-lib:
+        specifier: workspace:*
+        version: link:../implementations-lib
       mongodb:
         specifier: ~7.1.0
         version: 7.1.0(socks@2.8.10)
@@ -621,6 +624,9 @@ importers:
       ioredis:
         specifier: ~5.10.1
         version: 5.10.1
+      mongodb:
+        specifier: ~7.1.0
+        version: 7.1.0(socks@2.8.10)
       pg:
         specifier: ^8.13.1
         version: 8.13.3
@@ -640,6 +646,9 @@ importers:
       grpc_tools_node_protoc_ts:
         specifier: ~5.3.3
         version: 5.3.3
+      testcontainers:
+        specifier: ^12.0.4
+        version: 12.1.0
       tsx:
         specifier: ^4.19.3
         version: 4.19.3
@@ -1175,6 +1184,9 @@ importers:
       common-types-lib:
         specifier: workspace:*
         version: link:../common-types-lib
+      implementations-lib:
+        specifier: workspace:*
+        version: link:../implementations-lib
       mongodb:
         specifier: ~7.1.0
         version: 7.1.0(socks@2.8.10)

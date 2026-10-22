@@ -7,7 +7,7 @@ import { Db, MongoClient } from 'mongodb';
 import { GenericContainer, StartedTestContainer } from 'testcontainers';
 import { ConsoleLogger } from 'common-types-lib';
 import { IGrant } from 'auth-domain-lib';
-import { MongoDbGrantRepo } from '../src';
+import { MongoDbGrantRepo } from '../../src';
 
 const MONGO_IMAGE = 'mongo:8';
 const MONGO_PORT = 27017;
@@ -18,11 +18,11 @@ const ALICE = 'https://test.com/alice';
 const BOB = 'https://test.com/bob';
 
 /**
- * Covers the keyset pagination added for grants. Deliberately not a port of
- * the payments repo's suite — just enough to show the cursor walks the index
- * correctly in both directions and that the filters compose with it.
+ * Covers only this repo's own filters. The keyset mechanics they compose with
+ * are shared and tested once, in implementations-lib's
+ * mongo-pagination.integration.test.ts.
  */
-describe('MongoDbGrantRepo keyset pagination', () => {
+describe('MongoDbGrantRepo grant page filters', () => {
   let container: StartedTestContainer;
   let client: MongoClient;
   let db: Db;
@@ -103,43 +103,6 @@ describe('MongoDbGrantRepo keyset pagination', () => {
 
   const pageIds = (p: { items: IGrant[] }) => p.items.map((g) => g.id);
 
-  test('defaults to newest first', async () => {
-    const page = await repo.fetchGrantsPage({ limit: 10, backwards: false });
-    assert.deepEqual(pageIds(page), [...ids].reverse());
-    assert.equal(page.hasNextPage, false);
-    assert.equal(page.hasPreviousPage, false);
-  });
-
-  test('asc walks forward and reports more pages', async () => {
-    const first = await repo.fetchGrantsPage({
-      limit: 2,
-      backwards: false,
-      sortOrder: 'asc'
-    });
-    assert.deepEqual(pageIds(first), ids.slice(0, 2));
-    assert.equal(first.hasNextPage, true);
-    assert.equal(first.hasPreviousPage, false);
-
-    const second = await repo.fetchGrantsPage({
-      limit: 2,
-      backwards: false,
-      sortOrder: 'asc',
-      cursor: ids[1]
-    });
-    assert.deepEqual(pageIds(second), ids.slice(2, 4));
-    assert.equal(second.hasPreviousPage, true);
-  });
-
-  test('backwards returns the window before the cursor, same order', async () => {
-    const back = await repo.fetchGrantsPage({
-      limit: 2,
-      backwards: true,
-      sortOrder: 'asc',
-      cursor: ids[3]
-    });
-    assert.deepEqual(pageIds(back), ids.slice(1, 3));
-  });
-
   test('filters by state', async () => {
     const page = await repo.fetchGrantsPage({
       limit: 10,
@@ -166,24 +129,5 @@ describe('MongoDbGrantRepo keyset pagination', () => {
       identifier: ALICE
     });
     assert.deepEqual(pageIds(page), [...ids.slice(1, 4)].reverse());
-  });
-
-  test('unknown cursor is rejected', async () => {
-    await assert.rejects(
-      () =>
-        repo.fetchGrantsPage({
-          limit: 10,
-          backwards: false,
-          cursor: randomUUID()
-        }),
-      /Unknown cursor/
-    );
-  });
-
-  test('non-positive limit is rejected', async () => {
-    await assert.rejects(
-      () => repo.fetchGrantsPage({ limit: 0, backwards: false }),
-      /limit must be a positive integer/
-    );
   });
 });

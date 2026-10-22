@@ -49,7 +49,9 @@ import {
   IMessage,
   IMessageConsumer,
   IMessageProducer,
-  InvalidArgument
+  InvalidArgument,
+  DEFAULT_SORT_ORDER,
+  SortOrder
 } from 'common-types-lib';
 import { CursorContext, decodeCursor, encodeCursor } from './cursor';
 import {
@@ -81,10 +83,8 @@ import {
   GrantInteractionFinishedEvent,
   GrantInteractionFinishFailedEvent,
   GrantInteractionChoiceFailedEvent,
-  DEFAULT_SORT_ORDER,
   GrantState,
-  IGrant,
-  SortOrder
+  IGrant
 } from 'auth-domain-lib';
 import crypto from 'crypto';
 import { IGrantRepository } from 'auth-domain-lib/src';

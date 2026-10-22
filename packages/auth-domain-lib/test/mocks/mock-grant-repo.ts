@@ -2,14 +2,13 @@ import {
   IAccessToken,
   IContinuedGrantUpdate,
   IFinishedInteractiveGrantUpdate,
-  DEFAULT_SORT_ORDER,
   IGrant,
   IGrantPageOpts,
   IGrantRepository,
-  IPage,
   IRevokedGrantUpdate,
   IRotatedGrantUpdate
 } from '../../src/grant/interfaces';
+import { DEFAULT_SORT_ORDER, IPage } from 'common-types-lib';
 
 export class MockGrantRepo implements IGrantRepository {
   private _store: Map<string, IGrant> = new Map();

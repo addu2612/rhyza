@@ -3,9 +3,8 @@
   "main": "dist/index.js",
   "types": "dist/index.d.ts",
   "scripts": {
-    "test": "pnpm test:integration",
     "build": "tsc --build",
-    "test:integration": "tsc -p tsconfig.test.json && node --import tsx --test test/*.integration.test.ts"
+    "test:integration": "tsc -p tsconfig.test.json && node --import tsx --test test/integration/*.test.ts"
   },
   "keywords": [],
   "author": "",
@@ -14,6 +13,7 @@
     "@interledger/open-payments": "^7.4.0",
     "auth-domain-lib": "workspace:*",
     "common-types-lib": "workspace:*",
+    "implementations-lib": "workspace:*",
     "mongodb": "~7.1.0"
   },
   "devDependencies": {

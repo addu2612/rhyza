@@ -1,3 +1,5 @@
+import { IPage, IPageOpts } from 'common-types-lib';
+
 import { JWK } from '@interledger/http-signature-utils';
 
 export const AccessType = {
@@ -205,32 +207,13 @@ export interface IRevokedGrantUpdate {
   state: GrantState;
 }
 
-/**
- * Keyset pagination over `(createdAt, id)`. Mirrors the payments bounded
- * context's pagination deliberately rather than sharing it, so the two can be
- * compared before any shared abstraction is introduced.
- */
-export type SortOrder = 'asc' | 'desc';
-export const DEFAULT_SORT_ORDER: SortOrder = 'desc';
-
-export interface IGrantPageOpts {
+export interface IGrantPageOpts extends IPageOpts {
   /**
    * The end user whose access was granted — `accesses[].identifier`, not
    * `client`, which is the requesting client's wallet address.
    */
   identifier?: string;
   state?: GrantState;
-  cursor?: string;
-  limit: number;
-  /** false = forward (first/after), true = backward (last/before). */
-  backwards: boolean;
-  sortOrder?: SortOrder;
-}
-
-export interface IPage<T> {
-  items: T[];
-  hasNextPage: boolean;
-  hasPreviousPage: boolean;
 }
 
 export interface IGrantRepository {

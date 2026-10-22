@@ -1,4 +1,4 @@
-import { InvalidCursorError, SortOrder } from 'payments-domain-lib';
+import { InvalidCursorError, SortOrder } from 'common-types-lib';
 
 /**
  * The query a cursor was issued for. Each field changes which position a

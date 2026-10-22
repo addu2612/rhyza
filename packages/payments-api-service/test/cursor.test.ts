@@ -3,7 +3,7 @@
 import { describe, test } from 'node:test';
 import * as assert from 'node:assert/strict';
 import { randomUUID } from 'crypto';
-import { InvalidCursorError } from 'payments-domain-lib';
+import { InvalidCursorError } from 'common-types-lib';
 import {
   CursorContext,
   decodeCursor,

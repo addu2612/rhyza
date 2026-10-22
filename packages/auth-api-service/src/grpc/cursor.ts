@@ -1,4 +1,5 @@
-import { GrantState, InvalidCursorError, SortOrder } from 'auth-domain-lib';
+import { InvalidCursorError, SortOrder } from 'common-types-lib';
+import { GrantState } from 'auth-domain-lib';
 
 /**
  * The query a cursor was issued for. Each field changes which position a

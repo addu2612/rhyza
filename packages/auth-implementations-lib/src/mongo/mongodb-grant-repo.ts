@@ -1,26 +1,16 @@
+import { Collection, CollectionInfo, Db, MongoClient, WithId } from 'mongodb';
 import {
-  Collection,
-  CollectionInfo,
-  Db,
-  Filter,
-  MongoClient,
-  WithId
-} from 'mongodb';
-import {
-  DEFAULT_SORT_ORDER,
   IAccessToken,
   IGrant,
   IGrantPageOpts,
   IGrantRepository,
-  InvalidCursorError,
-  IPage,
-  SortOrder,
   IRevokedGrantUpdate,
   IRotatedGrantUpdate,
   IContinuedGrantUpdate,
   IFinishedInteractiveGrantUpdate
 } from 'auth-domain-lib';
-import { ILogger, InvalidArgument } from 'common-types-lib';
+import { ILogger, InvalidArgument, IPage } from 'common-types-lib';
+import { fetchPageDocs } from 'implementations-lib';
 
 const DB_NAME = 'auth';
 const GRANTS_COLLECTION_NAME = 'grants';
@@ -418,11 +408,7 @@ export class MongoDbGrantRepo implements IGrantRepository {
         filter['accesses.identifier'] = opts.identifier;
       }
 
-      const page = await this._fetchPageDocs(
-        this._grantCollection,
-        filter,
-        opts
-      );
+      const page = await fetchPageDocs(this._grantCollection, filter, opts);
 
       // One batched token fetch for the whole page rather than one per grant.
       const ids = page.items.map((doc) => doc.id);
@@ -456,70 +442,6 @@ export class MongoDbGrantRepo implements IGrantRepository {
         `Unable to fetch grants page - error: ${(err as Error).message}`
       );
     }
-  }
-
-  /**
-   * Walks the (createdAt, id) index from an optional cursor. Duplicated from
-   * the payments bounded context's repo rather than shared, pending a decision
-   * on whether the two should converge.
-   */
-  private async _fetchPageDocs<T extends { id: string; createdAt: Date }>(
-    collection: Collection<T>,
-    filter: Record<string, unknown>,
-    opts: {
-      cursor?: string;
-      limit: number;
-      backwards: boolean;
-      sortOrder?: SortOrder;
-    }
-  ): Promise<IPage<WithId<T>>> {
-    const { cursor, limit, backwards } = opts;
-    if (!Number.isInteger(limit) || limit < 1) {
-      throw new InvalidArgument(
-        `limit must be a positive integer, got ${limit}`
-      );
-    }
-    const descending = (opts.sortOrder ?? DEFAULT_SORT_ORDER) === 'desc';
-
-    let boundary: { id: string; createdAt: Date } | null = null;
-    if (cursor != null) {
-      boundary = (await collection.findOne({ id: cursor } as Filter<T>, {
-        projection: { _id: 0, id: 1, createdAt: 1 }
-      })) as { id: string; createdAt: Date } | null;
-      if (!boundary) {
-        throw new InvalidCursorError(`Unknown cursor: ${cursor}`);
-      }
-    }
-
-    // Which way we walk the index from the cursor. Paging forward through a
-    // descending list moves towards *older*.
-    const scanAscending = backwards === descending;
-
-    const cmp = scanAscending ? '$gt' : '$lt';
-    const range = boundary
-      ? {
-          $or: [
-            { createdAt: { [cmp]: boundary.createdAt } },
-            { createdAt: boundary.createdAt, id: { [cmp]: boundary.id } }
-          ]
-        }
-      : {};
-
-    const docs = (await collection
-      .find({ ...filter, ...range } as Filter<T>)
-      .sort(scanAscending ? { createdAt: 1, id: 1 } : { createdAt: -1, id: -1 })
-      .limit(limit + 1)
-      .toArray()) as unknown as WithId<T>[];
-
-    const hasMore = docs.length > limit;
-    const items = docs.slice(0, limit);
-    if (backwards) items.reverse();
-
-    return {
-      items,
-      hasNextPage: backwards ? cursor != null : hasMore,
-      hasPreviousPage: backwards ? hasMore : cursor != null
-    };
   }
 
   async fetchByIds(ids: string[]): Promise<IGrant[]> {
