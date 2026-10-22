@@ -64,7 +64,11 @@ describe('E2E tests', () => {
     });
     assert.equal(asset.code, assetCode);
 
-    const sender = await createWalletAddress(assetCode, 'sender', 'test sender');
+    const sender = await createWalletAddress(
+      assetCode,
+      'sender',
+      'test sender'
+    );
     const receiver = await createWalletAddress(
       assetCode,
       'receiver',
@@ -151,9 +155,6 @@ function dumpComposeLogs(): void {
     writeFileSync(composeLogsPath, logs);
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);
-    writeFileSync(
-      composeLogsPath,
-      `Failed to dump compose logs: ${message}\n`
-    );
+    writeFileSync(composeLogsPath, `Failed to dump compose logs: ${message}\n`);
   }
 }
