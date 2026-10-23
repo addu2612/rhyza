@@ -1,18 +1,53 @@
 'use strict';
 
-import { AuthClient } from 'auth-client-lib';
-import { GrantsListGrantsRequest } from 'admin-client-lib';
 import { FastifyInstance, FastifyPluginOptions } from 'fastify';
-// generic grpc -> http mappers; they live in payments-client-lib but are not
-// payments-specific
 import {
-  httpStatusFromGrpcError,
-  toClientApiErrorResponse
-} from 'payments-client-lib';
+  AuthClient,
+  GetGrantResult,
+  httpStatusFromClientError,
+  isAuthClientError
+} from 'auth-client-lib';
+import {
+  GetGrantRequest,
+  GrantsListGrantsRequest,
+  JsonWebKey,
+  instanceOfJsonWebKey
+} from 'admin-client-lib';
 import { parseGrantPageQuery } from '../pagination.js';
 
 interface GrantRouteOptions extends FastifyPluginOptions {
   authClient: AuthClient;
+}
+
+interface AdminApiGrant {
+  id: string;
+  createdAt: string;
+  state: GetGrantResult['state'];
+  client: string | JsonWebKey;
+  interactionNonce?: string;
+  subjectIds?: GetGrantResult['subjectIds'];
+  accesses?: GetGrantResult['accesses'];
+  interaction?: GetGrantResult['interaction'];
+}
+
+function toAdminApiGrant(authClientGrant: GetGrantResult): AdminApiGrant {
+  let client: string | JsonWebKey = authClientGrant.client;
+  try {
+    const maybeJsonWebKey = JSON.parse(client);
+    if (instanceOfJsonWebKey(maybeJsonWebKey)) client = maybeJsonWebKey;
+  } catch {
+    // Just pass plain string if invalid object.
+  }
+  return {
+    id: authClientGrant.id,
+    createdAt: authClientGrant.createdAt,
+    state: authClientGrant.state,
+    client,
+    interactionNonce: authClientGrant.interactionNonce,
+    subjectIds: authClientGrant.subjectIds,
+    accesses: authClientGrant.accesses,
+    interaction: authClientGrant.interaction
+  };
 }
 
 export async function grantRoutes(
@@ -30,43 +65,58 @@ export async function grantRoutes(
         );
 
         return reply.status(200).send({
-          result: page.items.map(toGrantBody),
+          result: page.items.map((grant) => toAdminApiGrant(grant)),
           pagination: page.pagination
         });
-      } catch (err) {
-        server.log.error(err);
-        const httpStatus = httpStatusFromGrpcError(err);
-        const { error } = toClientApiErrorResponse(err);
-        return reply.status(httpStatus).send({ error: error.description });
+      } catch (error) {
+        server.log.error(error);
+        const httpStatus = httpStatusFromClientError(error);
+        return reply
+          .status(httpStatus)
+          .send(
+            isAuthClientError(error) ? { error: error.message } : { error }
+          );
       }
     }
   );
-}
 
-/**
- * Projects a grant for the Admin API. Omits the grant's secrets — continue
- * token, interaction and finish nonces, access tokens — which an operator
- * listing has no use for.
- */
-function toGrantBody(grant: {
-  id: string;
-  createdAt: string;
-  state: string;
-  client: string;
-  accesses: {
-    type: string;
-    actions: string[];
-    identifier?: string;
-    limits?: unknown;
-  }[];
-  subjectIds: { format: string; id: string }[];
-}) {
-  return {
-    id: grant.id,
-    createdAt: grant.createdAt,
-    state: grant.state,
-    ...(grant.client ? { client: grant.client } : {}),
-    accesses: grant.accesses,
-    subjectIds: grant.subjectIds
-  };
+  server.get<{
+    Params: GetGrantRequest;
+  }>('/grants/:id', async (request, reply) => {
+    const { id } = request.params;
+
+    try {
+      const grant = await authClient.getGrant(id);
+      if (!grant) {
+        return reply.status(404);
+      }
+      return reply.status(200).send(toAdminApiGrant(grant));
+    } catch (error) {
+      server.log.error(error);
+      const httpStatus = httpStatusFromClientError(error);
+      return reply
+        .status(httpStatus)
+        .send(isAuthClientError(error) ? { error: error.message } : { error });
+    }
+  });
+
+  server.post<{
+    Params: {
+      id: string;
+    };
+  }>('/grants/:id/revoke', async (request, reply) => {
+    const { id } = request.params;
+
+    try {
+      const result = await authClient.adminRevokeGrant(id);
+
+      return reply.status(200).send(result);
+    } catch (error) {
+      server.log.error(error);
+      const httpStatus = httpStatusFromClientError(error);
+      return reply
+        .status(httpStatus)
+        .send(isAuthClientError(error) ? { error: error.message } : { error });
+    }
+  });
 }

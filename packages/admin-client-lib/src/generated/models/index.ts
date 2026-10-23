@@ -1,5 +1,7 @@
 /* tslint:disable */
 /* eslint-disable */
+export * from './AccessItem';
+export * from './AccessLimits';
 export * from './Amount';
 export * from './ApprovePayment200Response';
 export * from './Asset';
@@ -7,16 +9,16 @@ export * from './AssetCreate';
 export * from './AssetCreateResponse';
 export * from './AssetsResponse';
 export * from './CancelPayment200Response';
+export * from './Client';
 export * from './CreatePaymentRequest';
 export * from './CreateQuoteRequest';
+export * from './DirectedIdentityJWK';
 export * from './ErrorResponse';
 export * from './FxRateSet';
 export * from './Grant';
-export * from './GrantAccessItem';
-export * from './GrantAccessLimits';
 export * from './GrantState';
-export * from './GrantSubjectId';
 export * from './GrantsPage';
+export * from './Interaction';
 export * from './JsonWebKey';
 export * from './LiquidityDeposit200Response';
 export * from './LiquidityDepositRequest';
@@ -44,6 +46,8 @@ export * from './Quote';
 export * from './QuoteCreateBase';
 export * from './QuoteCreateFromPaymentIntentId';
 export * from './QuoteCreateFromPaymentIntentUrl';
+export * from './SubjectId';
 export * from './WalletAddressCreate';
 export * from './WalletAddressCreateResponse';
 export * from './WalletAddressKeyCreateResponse';
+export * from './WalletAddressObject';

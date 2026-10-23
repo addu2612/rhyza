@@ -1,16 +1,42 @@
-# API Changelog 0.0.12 vs. 0.0.13
+# API Changelog 0.0.15 vs. 0.0.16
 
 
 ## API Changes
 
+### GET /grant/{id}
+-  added the required property `createdAt` to the response with the `200` status
+
+
+### POST /grant/{id}
+-  added the required property `createdAt` to the response with the `200` status
+
+
 ### GET /grants
 -  endpoint added
 
+# API Changelog 0.0.14 vs. 0.0.15
 
 
+## API Changes
 
+### POST /grant/{id}
+-  endpoint added
 
+# API Changelog 0.0.13 vs. 0.0.14
 
+## API Changes
+
+### POST /peers/{id}/deactivate
+
+- endpoint added
+
+# API Changelog 0.0.12 vs. 0.0.13
+
+## API Changes
+
+### GET /grant/{id}
+
+- endpoint added
 
 # API Changelog 0.0.11 vs. 0.0.12
 
@@ -18,78 +44,76 @@ No changes to report, but the specs are different
 
 # API Changelog 0.0.10 vs. 0.0.11
 
-
 ## API Changes
 
 ### GET /payment-intents/{intentId}/payments/{id}
+
 - :warning: the response property `receiveAmount` became nullable for the status `200`
 
-
 ### GET /payments
+
 - :warning: the response property `result/items/receiveAmount` became nullable for the status `200`
 
-
 ### POST /payments
+
 - :warning: removed the request property `debitAmount`
 - :warning: removed the request property `id`
 - :warning: removed the request property `metadata`
 - :warning: removed the request property `paymentIntentId`
 - :warning: removed the request property `quoteId`
 - :warning: removed the request property `walletAddress`
--  added `#/components/schemas/PaymentCreateFromPaymentIntentId, #/components/schemas/PaymentCreateFromPaymentIntentUrl` to the request body `oneOf` list
-
+- added `#/components/schemas/PaymentCreateFromPaymentIntentId, #/components/schemas/PaymentCreateFromPaymentIntentUrl` to the request body `oneOf` list
 
 ### POST /quotes
+
 - :warning: removed the request property `debitAmount`
 - :warning: removed the request property `id`
 - :warning: removed the request property `paymentIntentId`
 - :warning: removed the request property `paymentIntentUrl`
 - :warning: removed the request property `receiveAmount`
 - :warning: removed the request property `walletAddress`
--  added `#/components/schemas/QuoteCreateFromPaymentIntentId, #/components/schemas/QuoteCreateFromPaymentIntentUrl` to the request body `oneOf` list
-
-
-
+- added `#/components/schemas/QuoteCreateFromPaymentIntentId, #/components/schemas/QuoteCreateFromPaymentIntentUrl` to the request body `oneOf` list
 
 ## Components
--  removed the schema `PaymentCreate`
--  removed the schema `QuoteCreate`
 
+- removed the schema `PaymentCreate`
+- removed the schema `QuoteCreate`
 
 ## Info
--  a breaking change was detected but the major version did not increase, from `0.0.10` to `0.0.11`
 
-
-
-
+- a breaking change was detected but the major version did not increase, from `0.0.10` to `0.0.11`
 
 # API Changelog 0.0.9 vs. 0.0.10
 
 ## API Changes
 
 ### GET /assets
--  endpoint added
+
+- endpoint added
 
 # API Changelog 0.0.8 vs. 0.0.9
 
 ## API Changes
 
 ### POST /payment-intents
+
 - :warning: the `metadata` request property `type` changed from `string` to `object`
 
-
 ### POST /payments
--  added the new optional request property `metadata`
+
+- added the new optional request property `metadata`
 
 ## Info
--  a breaking change was detected but the major version did not increase, from `0.0.8` to `0.0.9`
+
+- a breaking change was detected but the major version did not increase, from `0.0.8` to `0.0.9`
 
 # API Changelog 0.0.7 vs. 0.0.8
 
 ## API Changes
 
 ### POST /rates
--  endpoint added
+
+- endpoint added
 
 # API Changelog 0.0.6 vs. 0.0.7
 
@@ -111,6 +135,20 @@ No changes to report, but the specs are different
 
 ## API Changes
 
+### GET /grant/{id}
+
+- endpoint added
+
+# API Changelog 0.0.4 vs. 0.0.5
+
+## API Changes
+
+### GET /grant/{id}
+-  endpoint added
+
+# API Changelog 0.0.4 vs. 0.0.5
+
+## API Changes
 ### POST /liquidity/deposit
 
 - :warning: added the new required request property `amountScale`

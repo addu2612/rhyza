@@ -12,8 +12,8 @@ import { paymentIntentRoutes } from './routes/payment-intents.js';
 import { quoteRoutes } from './routes/quotes.js';
 import { paymentRoutes } from './routes/payments.js';
 import { liquidityRoutes } from './routes/liquidity.js';
-import { ratesRoutes } from './routes/rates.js';
 import { grantRoutes } from './routes/grants.js';
+import { ratesRoutes } from './routes/rates.js';
 import { ILogger } from 'common-types-lib';
 import {
   PinoLogger,
@@ -117,11 +117,11 @@ export class AdminApiService {
     this.server.register(liquidityRoutes, {
       palClient: this.palClient
     });
-    this.server.register(ratesRoutes, {
-      palClient: this.palClient
-    });
     this.server.register(grantRoutes, {
       authClient: this.authClient
+    });
+    this.server.register(ratesRoutes, {
+      palClient: this.palClient
     });
 
     await this.server.listen({ port: PORT, host: HOST });
