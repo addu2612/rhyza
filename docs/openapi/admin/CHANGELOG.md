@@ -4,15 +4,29 @@
 ## API Changes
 
 ### GET /grant/{id}
--  added the required property `createdAt` to the response with the `200` status
+- :warning: api path removed without deprecation
 
 
 ### POST /grant/{id}
--  added the required property `createdAt` to the response with the `200` status
+- :warning: api path removed without deprecation
 
 
 ### GET /grants
 -  endpoint added
+
+
+### GET /grants/{id}
+-  endpoint added
+
+
+### POST /grants/{id}/revoke
+-  endpoint added
+
+
+
+
+## Info
+-  a breaking change was detected but the major version did not increase, from `0.0.15` to `0.0.16`
 
 # API Changelog 0.0.14 vs. 0.0.15
 

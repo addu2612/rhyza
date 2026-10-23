@@ -47,6 +47,10 @@ export interface GrantsListGrantsRequest {
     sortOrder?: GrantsListGrantsSortOrderEnum;
 }
 
+export interface RevokeGrantRequest {
+    id: string;
+}
+
 /**
  * 
  */
@@ -68,7 +72,7 @@ export class GrantsApi extends runtime.BaseAPI {
         const headerParameters: runtime.HTTPHeaders = {};
 
 
-        let urlPath = `/grant/{id}`;
+        let urlPath = `/grants/{id}`;
         urlPath = urlPath.replace('{id}', encodeURIComponent(String(requestParameters['id'])));
 
         return {
@@ -159,6 +163,53 @@ export class GrantsApi extends runtime.BaseAPI {
      */
     async grantsListGrants(identifier?: string, state?: GrantState, cursor?: string, first?: number, last?: number, sortOrder?: GrantsListGrantsSortOrderEnum, initOverrides?: RequestInit | runtime.InitOverrideFunction): Promise<GrantsPage> {
         const response = await this.grantsListGrantsRaw({ identifier: identifier, state: state, cursor: cursor, first: first, last: last, sortOrder: sortOrder }, initOverrides);
+        return await response.value();
+    }
+
+    /**
+     * Creates request options for revokeGrant without sending the request
+     */
+    async revokeGrantRequestOpts(requestParameters: RevokeGrantRequest): Promise<runtime.RequestOpts> {
+        if (requestParameters['id'] == null) {
+            throw new runtime.RequiredError(
+                'id',
+                'Required parameter "id" was null or undefined when calling revokeGrant().'
+            );
+        }
+
+        const queryParameters: any = {};
+
+        const headerParameters: runtime.HTTPHeaders = {};
+
+
+        let urlPath = `/grants/{id}/revoke`;
+        urlPath = urlPath.replace('{id}', encodeURIComponent(String(requestParameters['id'])));
+
+        return {
+            path: urlPath,
+            method: 'POST',
+            headers: headerParameters,
+            query: queryParameters,
+        };
+    }
+
+    /**
+     * Revoke the grant associated with the provided id.
+     * Revoke grant
+     */
+    async revokeGrantRaw(requestParameters: RevokeGrantRequest, initOverrides?: RequestInit | runtime.InitOverrideFunction): Promise<runtime.ApiResponse<Grant>> {
+        const requestOptions = await this.revokeGrantRequestOpts(requestParameters);
+        const response = await this.request(requestOptions, initOverrides);
+
+        return new runtime.JSONApiResponse(response, (jsonValue) => GrantFromJSON(jsonValue));
+    }
+
+    /**
+     * Revoke the grant associated with the provided id.
+     * Revoke grant
+     */
+    async revokeGrant(id: string, initOverrides?: RequestInit | runtime.InitOverrideFunction): Promise<Grant> {
+        const response = await this.revokeGrantRaw({ id: id }, initOverrides);
         return await response.value();
     }
 

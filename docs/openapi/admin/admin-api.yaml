@@ -745,7 +745,7 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/ErrorResponse'
-  /grant/{id}:
+  /grants/{id}:
     get:
       summary: Get grant
       description: >-
@@ -773,12 +773,13 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/ErrorResponse'
+  /grants/{id}/revoke:
     post:
       summary: Revoke grant
       description: >-
         Revoke the grant associated with the provided id.
       tags:
-        - payments
+        - grants
       operationId: revokeGrant
       parameters:
         - name: id
