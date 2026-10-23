@@ -86,10 +86,9 @@ export async function outgoingPaymentRoutes(
     async (request, reply) => {
       const { walletAddress: walletAddressUrl } = request.body;
 
-      const { domain, pathName } =
-        parseAddressToDomainAndPathName(walletAddressUrl);
+      const pathName = pathNameFromWalletAddress(walletAddressUrl);
 
-      const alias = await palClient.resolveWalletAddressAlias(domain, pathName);
+      const alias = await palClient.resolveWalletAddressAlias(null, pathName);
 
       if (!alias) {
         throw new OpenPaymentsResourceServerRouteError(
