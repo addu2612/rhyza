@@ -8,7 +8,13 @@ import {
   IRevokedGrantUpdate,
   IRotatedGrantUpdate
 } from '../../src/grant/interfaces';
-import { DEFAULT_SORT_ORDER, IPage } from 'common-types-lib';
+import {
+  DEFAULT_SORT_ORDER,
+  InvalidArgument,
+  InvalidCursorError,
+  IPage,
+  SortOrder
+} from 'common-types-lib';
 
 export class MockGrantRepo implements IGrantRepository {
   private _store: Map<string, IGrant> = new Map();
@@ -113,36 +119,70 @@ export class MockGrantRepo implements IGrantRepository {
     });
   }
 
-  /**
-   * An approximation, not a reimplementation: enough for the aggregate tests
-   * to satisfy the interface. It filters and orders the same way, but it
-   * resolves the cursor by scanning rather than seeking an index, does not
-   * reject an unknown cursor, and ignores `backwards`. The real keyset
-   * behaviour is covered by auth-implementations-lib's integration test.
-   */
   async fetchGrantsPage(opts: IGrantPageOpts): Promise<IPage<IGrant>> {
-    const descending = (opts.sortOrder ?? DEFAULT_SORT_ORDER) === 'desc';
-    const matching = [...this._store.values()]
+    const all = this.getAll();
+    const filtered = all
       .filter((g) => opts.state == null || g.state === opts.state)
       .filter(
         (g) =>
           opts.identifier == null ||
           (g.accesses ?? []).some((a) => a.identifier === opts.identifier)
-      )
-      .sort((a, b) => {
-        const byTime = a.createdAt.getTime() - b.createdAt.getTime();
-        const cmp = byTime !== 0 ? byTime : a.id.localeCompare(b.id);
-        return descending ? -cmp : cmp;
-      });
+      );
+    return this._page(all, filtered, opts);
+  }
 
-    const from = opts.cursor
-      ? matching.findIndex((g) => g.id === opts.cursor) + 1
-      : 0;
+  // Keyset pagination over (createdAt, id) — mirrors the Mongo implementation.
+  // The cursor is resolved against the unfiltered collection, like the
+  // Mongo boundary findOne.
+  private _page<T extends { id: string; createdAt: Date }>(
+    all: T[],
+    filtered: T[],
+    opts: {
+      cursor?: string;
+      limit: number;
+      backwards: boolean;
+      sortOrder?: SortOrder;
+    }
+  ): IPage<T> {
+    if (!Number.isInteger(opts.limit) || opts.limit < 1) {
+      throw new InvalidArgument(
+        `limit must be a positive integer, got ${opts.limit}`
+      );
+    }
+    const cmp = (a: T, b: T) =>
+      a.createdAt.getTime() - b.createdAt.getTime() ||
+      (a.id < b.id ? -1 : a.id > b.id ? 1 : 0);
+
+    const descending = (opts.sortOrder ?? DEFAULT_SORT_ORDER) === 'desc';
+    // Mirrors the Mongo implementation: paging forward through a descending
+    // list walks the (createdAt, id) index towards older documents.
+    const scanAscending = opts.backwards === descending;
+
+    let boundary: T | undefined;
+    if (opts.cursor != null) {
+      boundary = all.find((item) => item.id === opts.cursor);
+      if (!boundary) {
+        throw new InvalidCursorError(`Unknown cursor: ${opts.cursor}`);
+      }
+    }
+
+    const inRange = boundary
+      ? filtered.filter((item) =>
+          scanAscending ? cmp(item, boundary) > 0 : cmp(item, boundary) < 0
+        )
+      : filtered;
+
+    const sorted = [...inRange].sort(cmp);
+    if (!scanAscending) sorted.reverse();
+
+    const hasMore = sorted.length > opts.limit;
+    const items = sorted.slice(0, opts.limit);
+    if (opts.backwards) items.reverse();
 
     return {
-      items: matching.slice(from, from + opts.limit),
-      hasNextPage: from + opts.limit < matching.length,
-      hasPreviousPage: from > 0
+      items,
+      hasNextPage: opts.backwards ? opts.cursor != null : hasMore,
+      hasPreviousPage: opts.backwards ? hasMore : opts.cursor != null
     };
   }
 
