@@ -49,6 +49,7 @@ export default defineConfig({
         }
       },
       components: {
+        Sidebar: './src/components/Sidebar.astro',
         PageSidebar: './src/components/PageSidebar.astro',
         Footer: './src/components/Footer.astro',
         PageTitle: './src/components/PageTitle.astro',
@@ -258,7 +259,8 @@ Key terminology notes:
         }),
         starlightGroupPages({
           sidebarLink: 'label',
-          exclude: ['apis/**']
+          exclude: ['apis/**'],
+          extendIndexPages: false
         }),
         starlightLinksValidator({
           // The API reference is a custom page, which the validator cannot see
