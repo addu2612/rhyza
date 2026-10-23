@@ -50,7 +50,7 @@ import {
   SignatureRequestData,
   StartInteractionResult,
   SubjectId,
-  IPage,
+  IPageResult,
   IPageQuery
 } from './types';
 
@@ -109,7 +109,7 @@ export class AuthClient {
     });
   }
 
-  getGrantsPage(query: IPageQuery = {}): Promise<IPage<GetGrantResult>> {
+  getGrantsPage(query: IPageQuery = {}): Promise<IPageResult<GetGrantResult>> {
     const { cursor, limit, backwards, sortOrder } = pageArgs(query);
 
     const request = new PbGetGrantsPageRequest();

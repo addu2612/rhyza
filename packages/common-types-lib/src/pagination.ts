@@ -9,9 +9,6 @@ export const DEFAULT_SORT_ORDER: SortOrder = 'desc';
 /**
  * One page of stored records, in the requested sort order regardless of which
  * direction it was reached from.
- *
- * Not to be confused with the client libraries' own `IPage`, which wraps items
- * with the opaque cursors a caller pages by. This is the storage-layer shape.
  */
 export interface IPage<T> {
   items: T[];

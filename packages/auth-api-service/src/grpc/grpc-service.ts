@@ -53,7 +53,8 @@ import {
   DEFAULT_SORT_ORDER,
   SortOrder
 } from 'common-types-lib';
-import { CursorContext, decodeCursor, encodeCursor } from './cursor';
+import { decodeCursor, encodeCursor } from 'implementations-lib';
+import { CursorContext } from './cursor';
 import {
   CreateGrantCmd,
   ContinueGrantCmd,

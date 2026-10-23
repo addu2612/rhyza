@@ -43,7 +43,8 @@ import {
   GetQuoteResponse,
   SortOrder as PbSortOrder
 } from 'payments-public-types-lib';
-import { CursorContext, decodeCursor, encodeCursor } from './cursor.js';
+import { decodeCursor, encodeCursor } from 'implementations-lib';
+import { CursorContext } from './cursor.js';
 import {
   IPaymentIntent,
   IPaymentIntentRepository,

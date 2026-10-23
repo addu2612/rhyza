@@ -79,7 +79,7 @@ export interface IPageInfo {
   hasPreviousPage: boolean;
 }
 
-export interface IPage<T> {
+export interface IPageResult<T> {
   items: T[];
   pagination: IPageInfo;
 }
