@@ -24,7 +24,6 @@ interface AdminApiGrant {
   createdAt: string;
   state: GetGrantResult['state'];
   client: string | JsonWebKey;
-  interactionNonce?: string;
   subjectIds?: GetGrantResult['subjectIds'];
   accesses?: GetGrantResult['accesses'];
   interaction?: GetGrantResult['interaction'];
@@ -43,7 +42,6 @@ function toAdminApiGrant(authClientGrant: GetGrantResult): AdminApiGrant {
     createdAt: authClientGrant.createdAt,
     state: authClientGrant.state,
     client,
-    interactionNonce: authClientGrant.interactionNonce,
     subjectIds: authClientGrant.subjectIds,
     accesses: authClientGrant.accesses,
     interaction: authClientGrant.interaction

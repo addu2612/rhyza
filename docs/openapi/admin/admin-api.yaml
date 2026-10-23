@@ -1536,9 +1536,6 @@ components:
           type: string
           format: date-time
           description: When the grant was created. The sort key for grant listings.
-        interactionNonce:
-          type: string
-          description: The nonce used by the client to verify an interaction hash.
         state:
           $ref: '#/components/schemas/GrantState'
           description: The current state of the grant.

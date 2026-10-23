@@ -68,12 +68,6 @@ export interface Grant {
      */
     createdAt: Date;
     /**
-     * The nonce used by the client to verify an interaction hash.
-     * @type {string}
-     * @memberof Grant
-     */
-    interactionNonce?: string;
-    /**
      * The current state of the grant.
      * @type {GrantState}
      * @memberof Grant
@@ -129,7 +123,6 @@ export function GrantFromJSONTyped(json: any, ignoreDiscriminator: boolean): Gra
         
         'id': json['id'],
         'createdAt': (new Date(json['createdAt'])),
-        'interactionNonce': json['interactionNonce'] == null ? undefined : json['interactionNonce'],
         'state': GrantStateFromJSON(json['state']),
         'client': json['client'] == null ? undefined : ClientFromJSON(json['client']),
         'subjectIds': json['subjectIds'] == null ? undefined : ((json['subjectIds'] as Array<any>).map(SubjectIdFromJSON)),
@@ -151,7 +144,6 @@ export function GrantToJSONTyped(value?: Grant | null, ignoreDiscriminator: bool
         
         'id': value['id'],
         'createdAt': value['createdAt'].toISOString(),
-        'interactionNonce': value['interactionNonce'],
         'state': GrantStateToJSON(value['state']),
         'client': ClientToJSON(value['client']),
         'subjectIds': value['subjectIds'] == null ? undefined : ((value['subjectIds'] as Array<any>).map(SubjectIdToJSON)),
