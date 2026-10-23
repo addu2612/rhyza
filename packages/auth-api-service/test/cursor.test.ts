@@ -4,11 +4,6 @@ import { decodeCursor, encodeCursor } from 'implementations-lib';
 
 import { CursorContext } from '../src/grpc/cursor';
 
-/**
- * Covers only that the grant filters are bound into the cursor. The mechanics
- * they rely on are shared and tested once, in implementations-lib's
- * cursor.test.ts.
- */
 describe('grant page cursor', () => {
   const base: CursorContext = { sortOrder: 'desc' };
   const id = 'f3c1e2a4-4b5d-4c6e-8a7f-1b2c3d4e5f60';

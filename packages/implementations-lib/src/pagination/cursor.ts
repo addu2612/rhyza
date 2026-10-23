@@ -7,10 +7,6 @@ import { InvalidCursorError } from 'common-types-lib';
  * sits at a different position under a different sort order or filter. So the
  * query it was issued for travels with it and is checked on the way back in,
  * rather than trusting the caller to keep paginating the same set.
- *
- * Each context supplies its own shape for that query (which filters it has),
- * so these are generic over it. Values are compared with `===`, which is all
- * the current contexts need: flat records of strings and enums.
  */
 
 /** Cursors are base64url so a caller cannot read or hand-craft a position. */

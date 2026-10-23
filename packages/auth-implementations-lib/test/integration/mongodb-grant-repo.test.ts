@@ -17,11 +17,6 @@ const T0 = Date.parse('2026-01-01T00:00:00.000Z');
 const ALICE = 'https://test.com/alice';
 const BOB = 'https://test.com/bob';
 
-/**
- * Covers only this repo's own filters. The keyset mechanics they compose with
- * are shared and tested once, in implementations-lib's
- * mongo-pagination.integration.test.ts.
- */
 describe('MongoDbGrantRepo grant page filters', () => {
   let container: StartedTestContainer;
   let client: MongoClient;

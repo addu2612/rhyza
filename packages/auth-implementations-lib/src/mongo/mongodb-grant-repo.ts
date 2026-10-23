@@ -401,7 +401,6 @@ export class MongoDbGrantRepo implements IGrantRepository {
         filter['state'] = opts.state;
       }
       if (opts.identifier != null) {
-        // the end user whose access was granted, not the requesting client
         filter['accesses.identifier'] = opts.identifier;
       }
 

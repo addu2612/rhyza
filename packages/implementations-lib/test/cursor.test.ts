@@ -6,13 +6,6 @@ import { randomUUID } from 'crypto';
 import { InvalidCursorError } from 'common-types-lib';
 import { decodeCursor, encodeCursor } from '../src/pagination/cursor';
 
-/**
- * The cursor mechanics, tested once against a stand-in context. Each bounded
- * context keeps a small test for its own filters; this covers the part that
- * has to behave identically everywhere — above all that a cursor replayed
- * against a changed query is refused rather than silently anchoring a page
- * somewhere unrelated.
- */
 interface TestContext {
   sortOrder: 'asc' | 'desc';
   filterA?: string;

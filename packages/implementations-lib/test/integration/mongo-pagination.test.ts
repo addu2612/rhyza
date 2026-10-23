@@ -23,9 +23,8 @@ interface Doc {
 }
 
 /**
- * Keyset pagination, independent of any bounded context. Generalised from the
- * payments repo's suite, which is where this logic was first proven; the
- * payments and auth suites now cover only their own filters and projections.
+ * Keyset pagination, independent of any bounded context. Bounded contexts
+ * should cover their own filters and projections.
  */
 describe('fetchPageDocs keyset pagination', () => {
   let container: StartedTestContainer;

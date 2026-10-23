@@ -548,10 +548,6 @@ function fromPbInteraction(
   };
 }
 
-/**
- * Relay-style first/last to the server's limit/backwards. Duplicated from the
- * payments client rather than shared, pending a decision on convergence.
- */
 function pageArgs(query: IPageQuery): {
   cursor?: string;
   limit: number;
@@ -580,9 +576,8 @@ function pageArgs(query: IPageQuery): {
 
   return {
     cursor,
-    limit: last ?? first ?? 0, // 0 => server default
+    limit: last ?? first ?? 0,
     backwards: last != null,
-    // Unset => UNSPECIFIED, letting the server apply its default order.
     sortOrder:
       sortOrder === 'asc'
         ? PbSortOrder.SORT_ORDER_ASC

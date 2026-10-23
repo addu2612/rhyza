@@ -119,8 +119,7 @@ enum SortOrder {
 }
 
 message GetGrantsPageRequest {
-	// Filters by the end user whose access was granted (accesses[].identifier),
-	// not by the requesting client; omit to list across all.
+	// Filters by the end user whose access was granted (accesses[].identifier)
 	optional string identifier = 1;
 	// Filters by grant state; omit to list across all.
 	optional string state = 2;

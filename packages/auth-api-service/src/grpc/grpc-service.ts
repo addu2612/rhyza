@@ -529,10 +529,6 @@ export class AuthServiceServer {
     }
   }
 
-  /**
-   * Shared by GetGrant and GetGrantsPage. Extracted unchanged from the
-   * GetGrant handler, plus createdAt, which pagination sorts on.
-   */
   private _toPbGrant(grant: IGrant): Grant {
     const response = new Grant();
     response.setId(grant.id);

@@ -66,7 +66,6 @@ export interface InteractionResult {
 export type PageSortOrder = 'asc' | 'desc';
 
 export interface IPageQuery {
-  /** The end user whose access was granted (accesses[].identifier). */
   identifier?: string;
   state?: string;
   /** Opaque cursor from a previous page's startCursor/endCursor. */

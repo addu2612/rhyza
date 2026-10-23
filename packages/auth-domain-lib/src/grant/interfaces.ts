@@ -208,10 +208,6 @@ export interface IRevokedGrantUpdate {
 }
 
 export interface IGrantPageOpts extends IPageOpts {
-  /**
-   * The end user whose access was granted — `accesses[].identifier`, not
-   * `client`, which is the requesting client's wallet address.
-   */
   identifier?: string;
   state?: GrantState;
 }
@@ -227,7 +223,6 @@ export interface IGrantRepository {
   storeRevokedTokens(tokens: IAccessToken[]): Promise<void>;
   fetchById(id: string): Promise<IGrant | undefined>;
   fetchByIds(ids: string[]): Promise<IGrant[]>;
-  /** Keyset-paginated grants, filterable by state and granted identifier. */
   fetchGrantsPage(opts: IGrantPageOpts): Promise<IPage<IGrant>>;
   storeInteractions(grants: IGrant[]): Promise<void>;
 }

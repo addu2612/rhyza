@@ -14,9 +14,6 @@ import {
  * Shared by every bounded context that paginates a Mongo collection. The
  * caller supplies its own `filter`, so only the cursor mechanics live here —
  * which is the part that is subtle and the part that has to agree everywhere.
- *
- * `_id` is projected away: nothing above this layer uses Mongo's own key, so
- * the documents are returned as `T` rather than the driver's `WithId<T>`.
  */
 export async function fetchPageDocs<T extends { id: string; createdAt: Date }>(
   collection: Collection<T>,
