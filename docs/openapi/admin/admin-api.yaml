@@ -1,7 +1,7 @@
 openapi: 3.1.0
 info:
   title: Rhyza Admin API
-  version: 0.0.16
+  version: 0.0.18
   license:
     name: ISC
     identifier: ISC
@@ -67,6 +67,38 @@ paths:
           application/json:
             schema:
               $ref: '#/components/schemas/PeerCreate'
+  /peers/{id}/activate:
+    post:
+      summary: Activate Peer
+      description: >-
+        Activate a peer that was deactivated. The ILP connector can send and
+        receive packets from the peer after activation takes effect.
+        Activating a peer that is already active returns 409.
+      tags:
+        - peers
+      operationId: activatePeer
+      parameters:
+        - name: id
+          in: path
+          required: true
+          description: The id of the peer.
+          schema:
+            type: string
+      responses:
+        '204':
+          description: The peer is activated.
+        '404':
+          description: Peer not found.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '409':
+          description: The peer is already active.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
   /peers/{id}/deactivate:
     post:
       summary: Deactivate Peer
@@ -157,6 +189,12 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/WalletAddressCreateResponse'
+        '400':
+          description: Invalid pathName (must be a single path segment).
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
         '409':
           description: Wallet address already exists.
           content:
@@ -1050,13 +1088,17 @@ components:
       type: object
       description: Schema for creating a new wallet address.
       required:
-        - address
+        - pathName
         - assetCode
         - publicName
       properties:
-        address:
+        pathName:
           type: string
-          description: The full wallet address (e.g., "example.com/alice").
+          description: >-
+            The wallet address path name (e.g., "alice"). Must be a single path
+            segment — values containing "/" or "://" are rejected. The full
+            wallet address URL is built from the configured Open Payments
+            resource server base URL plus this pathName.
         assetCode:
           type: string
           description: The code of the asset associated with this wallet address.

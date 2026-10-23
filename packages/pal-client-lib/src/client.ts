@@ -12,6 +12,7 @@ import {
   PalClientLedgerUnknownError,
   PalClientPeerAlreadyExistsError,
   PalClientPeerNotFoundError,
+  PalClientPeerAlreadyActiveError,
   PalClientPeerAlreadyInactiveError,
   PalClientUnknownError,
   PalClientWalletAddressAlreadyActiveError,
@@ -780,6 +781,9 @@ export class PalClient {
         if (error) {
           if (error.code == grpc.status.NOT_FOUND) {
             return reject(new PalClientPeerNotFoundError(error.message));
+          }
+          if (error.code === grpc.status.FAILED_PRECONDITION) {
+            return reject(new PalClientPeerAlreadyActiveError(error.message));
           }
           return reject(new PalClientUnknownError(error.message));
         }
