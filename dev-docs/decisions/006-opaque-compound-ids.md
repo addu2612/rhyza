@@ -1,10 +1,10 @@
-# 001: Opaque compound ids for Open Payments resources
+# 006: Opaque compound ids for Open Payments resources
 
 **Status:** Accepted
 **Date:** 2026-08-21
 **Linear Issue:** RHY-120
 
-Related: [002: Opaque pagination cursors](002-opaque-pagination-cursors.md)
+Related: [007: Opaque pagination cursors](007-opaque-pagination-cursors.md)
 
 ## Context
 
@@ -27,7 +27,7 @@ Open Payments returns compound ids: `base64url(parentId + "_" + childId)`.
 - Auth server: `grantId` + continue id, access token value, or token management id (`encodeCompoundId` in `open-payments-auth-service`).
 - A value that does not decode to two parts returns `404`.
 
-Clients must treat every identifier Rhyza returns as opaque, even ones that look like UUIDs. What is encoded inside is internal and may change. This is documented under "Opaque Identifiers" in `Architectural Differences from Rafiki.md`, which also covers the cursors in [003](002-opaque-pagination-cursors.md).
+Clients must treat every identifier Rhyza returns as opaque, even ones that look like UUIDs. What is encoded inside is internal and may change. This is documented under "Opaque Identifiers" in `Architectural Differences from Rafiki.md`, which also covers the cursors in [007](007-opaque-pagination-cursors.md).
 
 ## Consequences
 

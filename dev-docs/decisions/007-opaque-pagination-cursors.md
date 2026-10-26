@@ -1,10 +1,10 @@
-# 002: Opaque pagination cursors for Open Payments list actions
+# 007: Opaque pagination cursors for Open Payments list actions
 
 **Status:** Accepted
 **Date:** 2026-09-22
 **Linear Issue:** RHY-104
 
-Related: [001: Opaque compound ids for Open Payments resources](001-opaque-compound-ids.md)
+Related: [006: Opaque compound ids for Open Payments resources](006-opaque-compound-ids.md)
 
 ## Context
 
@@ -22,7 +22,7 @@ This applies to the list endpoints in both the Open Payments and Admin APIs.
 
 Cursors are `base64url(JSON { id, ctx })`, where `ctx` is `sortOrder`, `walletAddressId` and `paymentIntentId` (`encodeCursor` in `payments-api-service`). `decodeCursor` throws `InvalidCursorError` if the context does not match the current request.
 
-Like the compound ids in [001](001-opaque-compound-ids.md), cursors are opaque: clients pass them back exactly as received.
+Like the compound ids in [006](006-opaque-compound-ids.md), cursors are opaque: clients pass them back exactly as received.
 
 ## Consequences
 

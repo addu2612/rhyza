@@ -14,11 +14,16 @@ Guidelines:
 
 ## Decisions
 
-| #   | Title                                                                                        | Status   |
-| --- | -------------------------------------------------------------------------------------------- | -------- |
-| 001 | [Opaque compound ids for Open Payments resources](001-opaque-compound-ids.md)                | Accepted |
-| 002 | [Opaque pagination cursors for Open Payments list actions](002-opaque-pagination-cursors.md) | Accepted |
-| 003 | [Store grant spent amounts in the Auth BC](003-grant-spent-amounts-in-auth-bc.md)            | Accepted |
+| #   | Title                                                                                                     | Status   |
+| --- | --------------------------------------------------------------------------------------------------------- | -------- |
+| 001 | [Kafka for commands and events between and within bounded contexts](001-kafka-for-commands-and-events.md) | Accepted |
+| 002 | [MongoDB as the default database](002-mongodb-as-default-database.md)                                     | Accepted |
+| 003 | [gRPC for internal APIs](003-grpc-for-internal-apis.md)                                                   | Accepted |
+| 004 | [Store all ledger amounts at a fixed asset scale of 20](004-fixed-ledger-asset-scale.md)                  | Accepted |
+| 005 | [A single REST Admin API](005-rest-admin-api.md)                                                          | Accepted |
+| 006 | [Opaque compound ids for Open Payments resources](006-opaque-compound-ids.md)                             | Accepted |
+| 007 | [Opaque pagination cursors for Open Payments list actions](007-opaque-pagination-cursors.md)              | Accepted |
+| 008 | [Store grant spent amounts in the Auth BC](008-grant-spent-amounts-in-auth-bc.md)                         | Accepted |
 
 ## Writing a new ADR
 
