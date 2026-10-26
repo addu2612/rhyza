@@ -11,6 +11,7 @@ import {
   CreatePaymentIntentResult
 } from 'payments-client-lib';
 import { OpenPaymentsResourceServerRouteError } from '../errors.js';
+import { getGnapToken } from '../auth.js';
 import { components } from '../types/generated/resource-server-types.js';
 import { createStreamServer, generateStreamCredentials } from 'ilp-client-lib';
 import { randomUUID } from 'crypto';
@@ -22,6 +23,7 @@ interface IncomingPaymentRouteOptions extends FastifyPluginOptions {
   paymentsClient: PaymentsClient;
   streamServer: StreamServer;
   openPaymentsUrl: string;
+  openPaymentsAuthServiceUrl: string;
 }
 
 export function toIncomingPaymentBody(
@@ -67,12 +69,18 @@ export async function incomingPaymentRoutes(
   server: FastifyInstance,
   opts: IncomingPaymentRouteOptions
 ): Promise<void> {
-  const { palClient, paymentsClient, streamServer, openPaymentsUrl } = opts;
+  const {
+    palClient,
+    paymentsClient,
+    streamServer,
+    openPaymentsUrl,
+    openPaymentsAuthServiceUrl
+  } = opts;
 
   server.post<{
     Body: components['schemas']['create-incoming-payment-request'];
     Reply:
-      | components['schemas']['incoming-payment-with-methods']
+      | components['schemas']['incoming-payment-with-grant']
       | components['schemas']['error-response'];
   }>(
     '/incoming-payments',
@@ -151,7 +159,7 @@ export async function incomingPaymentRoutes(
         assetScale: paymentIntent.assetScale
       });
 
-      const response: components['schemas']['incoming-payment-with-methods'] = {
+      const response: components['schemas']['incoming-payment-with-grant'] = {
         ...toIncomingPaymentBody(paymentIntent, openPaymentsUrl),
         methods: [
           {
@@ -169,38 +177,67 @@ export async function incomingPaymentRoutes(
   server.get<{
     Params: { id: string };
     Reply:
-      | components['schemas']['incoming-payment-with-methods']
+      | components['schemas']['incoming-payment-with-grant']
+      | components['schemas']['incoming-payment-without-grant']
       | components['schemas']['error-response'];
-  }>('/incoming-payments/:id', async (request, reply) => {
-    const { id } = request.params;
+  }>(
+    '/incoming-payments/:id',
+    {
+      onRequest: async (request) => {
+        getGnapToken(request);
+      }
+    },
+    async (request, reply) => {
+      const { id } = request.params;
 
-    let paymentIntent: GetPaymentIntentResult;
-    try {
-      paymentIntent = await paymentsClient.getPaymentIntent(id);
-    } catch (err) {
-      const httpStatus = httpStatusFromGrpcError(err);
-      return reply.status(httpStatus).send(toClientApiErrorResponse(err));
+      if (request.gnapToken) {
+        // TODO: implement token introspection
+      }
+
+      let paymentIntent: GetPaymentIntentResult;
+      try {
+        paymentIntent = await paymentsClient.getPaymentIntent(id);
+      } catch (err) {
+        const httpStatus = httpStatusFromGrpcError(err);
+        return reply.status(httpStatus).send(toClientApiErrorResponse(err));
+      }
+
+      const streamCredentials = generateStreamCredentials(streamServer, {
+        paymentIntentId: paymentIntent.id,
+        assetCode: paymentIntent.assetCode,
+        assetScale: paymentIntent.assetScale
+      });
+
+      if (request.gnapToken) {
+        const response: components['schemas']['incoming-payment-with-grant'] = {
+          ...toIncomingPaymentBody(paymentIntent, openPaymentsUrl),
+          methods: [
+            {
+              type: 'ilp',
+              ilpAddress: streamCredentials.ilpAddress,
+              sharedSecret: streamCredentials.sharedSecret
+            }
+          ]
+        };
+        return reply.status(200).send(response);
+      } else {
+        const response: components['schemas']['incoming-payment-without-grant'] =
+          {
+            ...toIncomingPaymentBody(paymentIntent, openPaymentsUrl),
+            authServer: openPaymentsAuthServiceUrl,
+            methods: [
+              {
+                type: 'ilp',
+                ilpAddress: streamCredentials.ilpAddress,
+                sharedSecret: streamCredentials.sharedSecret
+              }
+            ]
+          };
+
+        return reply.status(200).send(response);
+      }
     }
-
-    const streamCredentials = generateStreamCredentials(streamServer, {
-      paymentIntentId: paymentIntent.id,
-      assetCode: paymentIntent.assetCode,
-      assetScale: paymentIntent.assetScale
-    });
-
-    const response: components['schemas']['incoming-payment-with-methods'] = {
-      ...toIncomingPaymentBody(paymentIntent, openPaymentsUrl),
-      methods: [
-        {
-          type: 'ilp',
-          ilpAddress: streamCredentials.ilpAddress,
-          sharedSecret: streamCredentials.sharedSecret
-        }
-      ]
-    };
-
-    return reply.status(200).send(response);
-  });
+  );
 
   server.get<{
     Querystring: {
