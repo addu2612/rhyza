@@ -90,7 +90,9 @@ export class IlpPeerAggregate {
     private readonly peerRepo: IPeerRepository,
     private readonly peeringClient: IPeeringClient,
     private readonly resolveStreamCredentials: ResolveStreamCredentials,
-    private readonly streamServer: StreamServer
+    private readonly streamServer: StreamServer,
+    /** This node's ILP address — used as `triggeredBy` on locally originated rejects. */
+    private readonly ilpAddress: string
   ) {}
 
   async createPeer(input: IPeer): Promise<IPeer> {
@@ -597,6 +599,7 @@ export class IlpPeerAggregate {
       packetId: payload.packetId,
       callbackDeadline: inboundPrepare.expiresAt,
       rejectCode: REJECT_CODE_QUOTE_RESPONSE,
+      triggeredBy: this.ilpAddress,
       data: data.toString('base64')
     });
     if (stored.state === 'PENDING') {
@@ -739,6 +742,7 @@ export class IlpPeerAggregate {
       packetId: context.packetId,
       callbackDeadline,
       rejectCode,
+      triggeredBy: this.ilpAddress,
       data
     });
   }

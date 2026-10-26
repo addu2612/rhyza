@@ -99,7 +99,8 @@ export class IlpCommandHandlerService {
       peerRepo,
       peeringClient,
       resolveStreamCredentials,
-      streamServer
+      streamServer,
+      ILP_ADDRESS
     );
 
     this._commandHandler = new IlpCommandHandler(

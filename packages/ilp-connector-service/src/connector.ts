@@ -21,7 +21,8 @@ export class IlpConnector {
     private readonly _producer: IMessageProducer,
     private readonly _transport: IConnectorTransport,
     private readonly _correlationStore: ITransportCorrelationStore,
-    private readonly _logger: ILogger = new ConsoleLogger()
+    private readonly _logger: ILogger = new ConsoleLogger(),
+    private readonly _ilpAddress?: string
   ) {}
 
   init(): void {
@@ -117,7 +118,8 @@ export class IlpConnector {
         kind: 'REJECT',
         packetId,
         rejectCode: 'R00',
-        rejectMessage: 'no fulfill/reject callback received before expiry'
+        rejectMessage: 'no fulfill/reject callback received before expiry',
+        triggeredBy: this._ilpAddress
       });
     }
   }

@@ -206,7 +206,8 @@ async function wireSystem(calculator?: IQuoteCalculator) {
     repo,
     new KafkaPeeringClient(producer, logger),
     fake.resolveStreamCredentials,
-    fake.streamServer
+    fake.streamServer,
+    fake.serverAddress
   );
   const cmdHandler = new IlpCommandHandler(
     bus.consumer(),

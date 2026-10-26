@@ -157,7 +157,8 @@ async function startedHandler(
     repo,
     peeringClient,
     fake.resolveStreamCredentials,
-    fake.streamServer
+    fake.streamServer,
+    fake.serverAddress
   );
   const handler = new IlpCommandHandler(
     consumer,
@@ -258,6 +259,7 @@ describe('IlpCommandHandler — remote quote receiving', () => {
     assert.equal(reject.payload.peerId, 'peer-1');
     assert.equal(reject.payload.packetId, 'packet-in-1');
     assert.equal(reject.payload.rejectCode, 'F99');
+    assert.equal(reject.payload.triggeredBy, 'test.rhyza');
     assert.ok(reject.payload.data, 'expected STREAM quote reply data');
     assert.equal(
       decodeStreamPrepareAmount(
@@ -277,6 +279,7 @@ describe('IlpCommandHandler — remote quote receiving', () => {
     const reject = rejectFor(producer);
     assert.ok(reject, 'expected an F03 reject');
     assert.equal(reject.payload.rejectCode, 'F03');
+    assert.equal(reject.payload.triggeredBy, 'test.rhyza');
     assert.equal(reject.payload.data, undefined, 'must not leak detail');
     assert.equal(
       producer.sent.filter(

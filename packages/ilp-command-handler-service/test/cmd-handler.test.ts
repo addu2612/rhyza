@@ -169,7 +169,8 @@ async function startedHandler() {
     repo,
     peeringClient,
     fake.resolveStreamCredentials,
-    fake.streamServer
+    fake.streamServer,
+    fake.serverAddress
   );
   const handler = new IlpCommandHandler(
     consumer,
@@ -737,7 +738,8 @@ describe('IlpCommandHandler — remote payment sending', () => {
       repo,
       peeringClient,
       fake.resolveStreamCredentials,
-      fake.streamServer
+      fake.streamServer,
+      fake.serverAddress
     );
     const handler = new IlpCommandHandler(
       consumer,

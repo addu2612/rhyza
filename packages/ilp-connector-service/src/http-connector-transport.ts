@@ -38,6 +38,8 @@ export interface HttpConnectorTransportOptions {
   logger?: ILogger;
   acceptTimeoutMs?: number;
   callbackRetryDelayMs?: number;
+  /** This node's ILP address — set as `triggeredBy` on connector-originated rejects. */
+  ilpAddress?: string;
 }
 
 export class HttpConnectorTransport implements IConnectorTransport {
@@ -49,6 +51,7 @@ export class HttpConnectorTransport implements IConnectorTransport {
   private readonly _logger: ILogger;
   private readonly _acceptTimeoutMs: number;
   private readonly _callbackRetryDelayMs: number;
+  private readonly _ilpAddress?: string;
 
   private _server?: http.Server;
   private _responseHandler?: WireResponseHandler;
@@ -68,6 +71,7 @@ export class HttpConnectorTransport implements IConnectorTransport {
       options.acceptTimeoutMs ?? DEFAULT_ACCEPT_TIMEOUT_MS;
     this._callbackRetryDelayMs =
       options.callbackRetryDelayMs ?? DEFAULT_CALLBACK_RETRY_DELAY_MS;
+    this._ilpAddress = options.ilpAddress;
   }
 
   async start(): Promise<void> {
@@ -125,7 +129,8 @@ export class HttpConnectorTransport implements IConnectorTransport {
         kind: 'REJECT',
         packetId: prepare.packetId,
         rejectCode: 'T00',
-        rejectMessage: 'no outgoing connector config for peer'
+        rejectMessage: 'no outgoing connector config for peer',
+        triggeredBy: this._ilpAddress
       });
       return;
     }
@@ -182,7 +187,8 @@ export class HttpConnectorTransport implements IConnectorTransport {
         kind: 'REJECT',
         packetId: prepare.packetId,
         rejectCode,
-        rejectMessage: message
+        rejectMessage: message,
+        triggeredBy: this._ilpAddress
       });
     } finally {
       clearTimeout(timeout);

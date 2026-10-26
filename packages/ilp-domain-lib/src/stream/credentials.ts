@@ -22,6 +22,7 @@ export interface FakeStreamCredentials {
   resolveStreamCredentials: ResolveStreamCredentials;
   issueCredentials(paymentIntentId: string): StreamCredentials;
   streamServer: StreamServer;
+  serverAddress: string;
 }
 
 export function createFakeResolveStreamCredentials(
@@ -33,6 +34,7 @@ export function createFakeResolveStreamCredentials(
 
   return {
     streamServer,
+    serverAddress,
     issueCredentials(paymentIntentId: string): StreamCredentials {
       const credentials = streamServer.generateCredentials({
         paymentTag: paymentIntentId

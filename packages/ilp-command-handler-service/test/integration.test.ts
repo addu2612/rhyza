@@ -209,7 +209,8 @@ async function wireSystem(autoReject: boolean) {
     repo,
     new KafkaPeeringClient(producer, logger),
     fake.resolveStreamCredentials,
-    fake.streamServer
+    fake.streamServer,
+    fake.serverAddress
   );
   const handler = new IlpCommandHandler(
     bus.consumer(),
