@@ -8,4 +8,6 @@ One file per decision, numbered `NNN-short-slug.md`, starting from [000-template
 
 | #   | Title | Status |
 | --- | ----- | ------ |
-| 001 | [Store grant spent amounts in the Auth BC](001-grant-spent-amounts-in-auth-bc.md) | Accepted |
+| 001 | [Opaque compound ids for Open Payments resources](001-opaque-compound-ids.md) | Accepted |
+| 002 | [Opaque pagination cursors for Open Payments list actions](002-opaque-pagination-cursors.md) | Accepted |
+| 003 | [Store grant spent amounts in the Auth BC](003-grant-spent-amounts-in-auth-bc.md) | Accepted |

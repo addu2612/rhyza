@@ -1,8 +1,8 @@
-# 001: Store grant spent amounts in the Auth BC
+# 003: Store grant spent amounts in the Auth BC
 
 **Status:** Accepted
 **Date:** 2026-09-23
-**Linear:** RHY-150
+**Linear Issue:** RHY-150
 
 ## Context
 

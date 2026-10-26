@@ -2,7 +2,7 @@
 
 **Status:** Proposed | Accepted | Deprecated | Superseded by NNN
 **Date:** YYYY-MM-DD
-**Linear:** RHY-XXX (if applicable)
+**Linear Issue:** RHY-XXX (if applicable)
 
 ## Context
 
