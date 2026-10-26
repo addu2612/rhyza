@@ -265,7 +265,8 @@ describe('STREAM outgoing encode', () => {
     assert.equal(reply.ilpPacketType, IlpPacketType.Fulfill);
     assert.equal(reply.prepareAmount.toString(), '95');
     assert.equal(
-      reply.frames.filter((frame) => frame instanceof StreamReceiptFrame).length,
+      reply.frames.filter((frame) => frame instanceof StreamReceiptFrame)
+        .length,
       1
     );
     const assets = reply.frames.filter(
