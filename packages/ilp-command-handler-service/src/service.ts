@@ -11,7 +11,7 @@ import {
   IPeerRepository
 } from 'ilp-domain-lib';
 import {
-  CachedPeerStore,
+  CachedPeerRepository,
   InMemoryPeerRepository,
   KafkaPeeringClient,
   createResolveStreamCredentials,
@@ -34,7 +34,7 @@ export class IlpCommandHandlerService {
   private static _producer: IMessageProducer;
   private static _consumer: IMessageConsumer;
   private static _commandHandler: IlpCommandHandler;
-  private static _peerStore?: CachedPeerStore;
+  private static _peerRepo?: CachedPeerRepository;
 
   static async start(deps?: {
     logger?: ILogger;
@@ -74,12 +74,12 @@ export class IlpCommandHandlerService {
     } else if (deps?.seedPeers) {
       peerRepo = new InMemoryPeerRepository(deps.seedPeers);
     } else {
-      this._peerStore = await CachedPeerStore.connect(
+      this._peerRepo = await CachedPeerRepository.connect(
         MONGODB_URL,
         this._logger,
         REDIS_URL
       );
-      peerRepo = this._peerStore.store;
+      peerRepo = this._peerRepo;
     }
 
     const peeringClient =
@@ -120,9 +120,9 @@ export class IlpCommandHandlerService {
     if (this._producer) {
       await this._producer.disconnect();
     }
-    if (this._peerStore) {
-      await this._peerStore.disconnect();
-      this._peerStore = undefined;
+    if (this._peerRepo) {
+      await this._peerRepo.disconnect();
+      this._peerRepo = undefined;
     }
   }
 }

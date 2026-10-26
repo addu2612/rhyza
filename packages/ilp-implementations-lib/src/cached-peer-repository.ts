@@ -1,5 +1,13 @@
+import { Redis } from 'ioredis';
 import { ICache, ILogger } from 'common-types-lib';
-import { IPacketCorrelation, IPeer, IPeerStore } from 'ilp-domain-lib';
+import {
+  IPacketCorrelation,
+  IPeer,
+  IPeerRepository,
+  IPeerStore
+} from 'ilp-domain-lib';
+import { RedisCache } from 'implementations-lib';
+import { MongoDbPeerRepository } from './mongo/mongodb-peer-repository';
 
 const PACKET_CACHE_KEY_PREFIX = 'ilp:packet:';
 
@@ -27,30 +35,85 @@ export function parsePacketCorrelation(value: string): IPacketCorrelation {
   return revivePacketCorrelation(JSON.parse(value) as IPacketCorrelation);
 }
 
-// Mongo is the durable source of truth. Redis is a cache in front of packet
-// rows so STREAM reply rebuilds stay off the database on the hot path.
-// Write Mongo first; a Redis failure must not fail the command.
-export class WriteThroughPeerRepository implements IPeerStore {
+// Mongo is the durable source of truth. Redis is an optional write-through
+// cache for packet correlations so STREAM reply rebuilds stay off the
+// database on the hot path. Write Mongo first; a Redis failure must not
+// fail the command.
+export class CachedPeerRepository implements IPeerRepository {
+  private readonly _mongoLifecycle?: MongoDbPeerRepository;
+  private readonly _redis?: Redis;
+
   constructor(
-    private readonly _inner: IPeerStore,
-    private readonly _packetCache: ICache<IPacketCorrelation>,
-    private readonly _logger: ILogger
-  ) {}
+    private readonly _store: IPeerStore,
+    private readonly _logger: ILogger,
+    private readonly _packetCache?: ICache<IPacketCorrelation>,
+    lifecycle?: { mongo: MongoDbPeerRepository; redis?: Redis }
+  ) {
+    this._mongoLifecycle = lifecycle?.mongo;
+    this._redis = lifecycle?.redis;
+  }
+
+  static async connect(
+    mongoUrl: string,
+    logger: ILogger,
+    redisUrl?: string
+  ): Promise<CachedPeerRepository> {
+    const mongo = new MongoDbPeerRepository(
+      mongoUrl,
+      logger.child('peer-repo')
+    );
+    await mongo.init();
+
+    if (!redisUrl) {
+      logger.info('REDIS_URL not set - packet correlations are Mongo-only');
+      return new CachedPeerRepository(
+        mongo,
+        logger.child('peer-repo'),
+        undefined,
+        {
+          mongo
+        }
+      );
+    }
+
+    const redis = new Redis(redisUrl, { lazyConnect: true });
+    await redis.connect();
+    logger.info('Using Mongo + Redis write-through for packet correlations');
+    return new CachedPeerRepository(
+      mongo,
+      logger.child('peer-repo'),
+      new RedisCache(
+        redis,
+        logger.child('packet-cache'),
+        parsePacketCorrelation
+      ),
+      { mongo, redis }
+    );
+  }
+
+  async disconnect(): Promise<void> {
+    if (this._redis) {
+      await this._redis.quit();
+    }
+    if (this._mongoLifecycle) {
+      await this._mongoLifecycle.destroy();
+    }
+  }
 
   fetchById(peerId: string): Promise<IPeer | undefined> {
-    return this._inner.fetchById(peerId);
+    return this._store.fetchById(peerId);
   }
 
   fetchAll(): Promise<IPeer[]> {
-    return this._inner.fetchAll();
+    return this._store.fetchAll();
   }
 
   store(peer: IPeer): Promise<void> {
-    return this._inner.store(peer);
+    return this._store.store(peer);
   }
 
   update(peer: IPeer): Promise<void> {
-    return this._inner.update(peer);
+    return this._store.update(peer);
   }
 
   async fetchPacketById(
@@ -61,7 +124,7 @@ export class WriteThroughPeerRepository implements IPeerStore {
       return cached;
     }
 
-    const stored = await this._inner.fetchPacketById(packetId);
+    const stored = await this._store.fetchPacketById(packetId);
     if (stored) {
       await this._cacheSet(stored);
     }
@@ -69,18 +132,21 @@ export class WriteThroughPeerRepository implements IPeerStore {
   }
 
   async storePacket(packet: IPacketCorrelation): Promise<void> {
-    await this._inner.storePacket(packet);
+    await this._store.storePacket(packet);
     await this._cacheSet(packet);
   }
 
   async updatePacket(packet: IPacketCorrelation): Promise<void> {
-    await this._inner.updatePacket(packet);
+    await this._store.updatePacket(packet);
     await this._cacheSet(packet);
   }
 
   private async _cacheGet(
     packetId: string
   ): Promise<IPacketCorrelation | undefined> {
+    if (!this._packetCache) {
+      return undefined;
+    }
     try {
       const cached = await this._packetCache.get(packetCacheKey(packetId));
       return cached ? revivePacketCorrelation(cached) : undefined;
@@ -93,6 +159,9 @@ export class WriteThroughPeerRepository implements IPeerStore {
   }
 
   private async _cacheDelete(packetId: string): Promise<void> {
+    if (!this._packetCache) {
+      return;
+    }
     try {
       await this._packetCache.delete(packetCacheKey(packetId));
     } catch (err) {
@@ -103,6 +172,9 @@ export class WriteThroughPeerRepository implements IPeerStore {
   }
 
   private async _cacheSet(packet: IPacketCorrelation): Promise<void> {
+    if (!this._packetCache) {
+      return;
+    }
     try {
       await this._packetCache.setWithTtl(
         packetCacheKey(packet.packetId),

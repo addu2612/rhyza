@@ -5,7 +5,7 @@ import { describe, test } from 'node:test';
 import { ConsoleLogger, ICache } from 'common-types-lib';
 import { IPacketCorrelation, IPeer } from 'ilp-domain-lib';
 import { InMemoryPeerRepository } from '../src/in-memory-peer-repository';
-import { WriteThroughPeerRepository } from '../src/write-through-peer-repository';
+import { CachedPeerRepository } from '../src/cached-peer-repository';
 
 class MapCache implements ICache<IPacketCorrelation> {
   readonly values = new Map<string, IPacketCorrelation>();
@@ -76,15 +76,11 @@ const peer: IPeer = {
   }
 };
 
-describe('WriteThroughPeerRepository', () => {
+describe('CachedPeerRepository', () => {
   test('storePacket writes Mongo first, then the cache', async () => {
     const inner = new InMemoryPeerRepository();
     const cache = new MapCache();
-    const repo = new WriteThroughPeerRepository(
-      inner,
-      cache,
-      new ConsoleLogger()
-    );
+    const repo = new CachedPeerRepository(inner, new ConsoleLogger(), cache);
 
     await repo.storePacket(packet());
 
@@ -98,11 +94,7 @@ describe('WriteThroughPeerRepository', () => {
   test('a failed cache update drops the stale row so the next read hits Mongo', async () => {
     const inner = new InMemoryPeerRepository();
     const cache = new MapCache();
-    const repo = new WriteThroughPeerRepository(
-      inner,
-      cache,
-      new ConsoleLogger()
-    );
+    const repo = new CachedPeerRepository(inner, new ConsoleLogger(), cache);
     const pending = {
       ...packet(),
       sharedSecret: 'secret-should-not-survive'
@@ -128,11 +120,7 @@ describe('WriteThroughPeerRepository', () => {
     const inner = new InMemoryPeerRepository();
     const cache = new MapCache();
     cache.throwOnSet = true;
-    const repo = new WriteThroughPeerRepository(
-      inner,
-      cache,
-      new ConsoleLogger()
-    );
+    const repo = new CachedPeerRepository(inner, new ConsoleLogger(), cache);
 
     await repo.storePacket(packet());
 
@@ -143,11 +131,7 @@ describe('WriteThroughPeerRepository', () => {
   test('fetchPacketById returns the cached row without reading Mongo', async () => {
     const inner = new InMemoryPeerRepository();
     const cache = new MapCache();
-    const repo = new WriteThroughPeerRepository(
-      inner,
-      cache,
-      new ConsoleLogger()
-    );
+    const repo = new CachedPeerRepository(inner, new ConsoleLogger(), cache);
     const stored = packet();
     await cache.setWithTtl('ilp:packet:packet-1', stored, 60_000);
 
@@ -159,11 +143,7 @@ describe('WriteThroughPeerRepository', () => {
   test('a cache miss loads Mongo and backfills Redis', async () => {
     const inner = new InMemoryPeerRepository();
     const cache = new MapCache();
-    const repo = new WriteThroughPeerRepository(
-      inner,
-      cache,
-      new ConsoleLogger()
-    );
+    const repo = new CachedPeerRepository(inner, new ConsoleLogger(), cache);
     await inner.storePacket(packet());
 
     const fetched = await repo.fetchPacketById('packet-1');
@@ -175,11 +155,7 @@ describe('WriteThroughPeerRepository', () => {
     const inner = new InMemoryPeerRepository();
     const cache = new MapCache();
     cache.throwOnGet = true;
-    const repo = new WriteThroughPeerRepository(
-      inner,
-      cache,
-      new ConsoleLogger()
-    );
+    const repo = new CachedPeerRepository(inner, new ConsoleLogger(), cache);
     await inner.storePacket(packet());
 
     const fetched = await repo.fetchPacketById('packet-1');
@@ -189,15 +165,20 @@ describe('WriteThroughPeerRepository', () => {
   test('peer config is not cached', async () => {
     const inner = new InMemoryPeerRepository();
     const cache = new MapCache();
-    const repo = new WriteThroughPeerRepository(
-      inner,
-      cache,
-      new ConsoleLogger()
-    );
+    const repo = new CachedPeerRepository(inner, new ConsoleLogger(), cache);
 
     await repo.store(peer);
     const fetched = await repo.fetchById('peer-1');
     assert.equal(fetched?.peerId, 'peer-1');
     assert.equal(cache.values.size, 0);
+  });
+
+  test('without a cache, packets go straight to the store', async () => {
+    const inner = new InMemoryPeerRepository();
+    const repo = new CachedPeerRepository(inner, new ConsoleLogger());
+
+    await repo.storePacket(packet());
+    const fetched = await repo.fetchPacketById('packet-1');
+    assert.equal(fetched?.packetId, 'packet-1');
   });
 });
