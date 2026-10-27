@@ -133,7 +133,7 @@ export class QuotesApi extends runtime.BaseAPI {
     }
 
     /**
-     * Retrieve a quote in any state. The response shape depends on state: PendingQuote, CompletedQuote, or FailedQuote.
+     * Retrieve a quote in any state. The response shape depends on whether the quote is pending, completed, or failed.
      * Get Quote
      */
     async getQuoteRaw(requestParameters: GetQuoteRequest, initOverrides?: RequestInit | runtime.InitOverrideFunction): Promise<runtime.ApiResponse<GetQuote200Response>> {
@@ -144,7 +144,7 @@ export class QuotesApi extends runtime.BaseAPI {
     }
 
     /**
-     * Retrieve a quote in any state. The response shape depends on state: PendingQuote, CompletedQuote, or FailedQuote.
+     * Retrieve a quote in any state. The response shape depends on whether the quote is pending, completed, or failed.
      * Get Quote
      */
     async getQuote(intentId: string, id: string, initOverrides?: RequestInit | runtime.InitOverrideFunction): Promise<GetQuote200Response> {
