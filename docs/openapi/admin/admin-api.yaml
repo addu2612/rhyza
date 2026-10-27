@@ -1,7 +1,7 @@
 openapi: 3.1.0
 info:
   title: Rhyza Admin API
-  version: 0.0.14
+  version: 0.0.19
   license:
     name: ISC
     identifier: ISC
@@ -33,9 +33,8 @@ paths:
     post:
       summary: Create Peer
       description: >-
-        Create a new ILP peer. Creates the peer in both PAL (asset,
-        settlement, static ILP address) and ILP (connector transport config)
-        with the same peer id.
+        Create a new ILP peer with its asset, settlement and static ILP address,
+        and its ILP connector transport configuration.
       tags:
         - peers
       operationId: createPeer
@@ -55,8 +54,8 @@ paths:
                 $ref: '#/components/schemas/ErrorResponse'
         '502':
           description: >-
-            Peer was created in PAL but ILP connector configuration failed;
-            the PAL peer has been deactivated. Retry the request.
+            The peer was created but its ILP connector configuration failed,
+            so the peer has been deactivated. Retry the request.
           content:
             application/json:
               schema:
@@ -68,6 +67,70 @@ paths:
           application/json:
             schema:
               $ref: '#/components/schemas/PeerCreate'
+  /peers/{id}/activate:
+    post:
+      summary: Activate Peer
+      description: >-
+        Activate a peer that was deactivated. The ILP connector can send and
+        receive packets from the peer after activation takes effect.
+        Activating a peer that is already active returns 409.
+      tags:
+        - peers
+      operationId: activatePeer
+      parameters:
+        - name: id
+          in: path
+          required: true
+          description: The id of the peer.
+          schema:
+            type: string
+      responses:
+        '204':
+          description: The peer is activated.
+        '404':
+          description: Peer not found.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '409':
+          description: The peer is already active.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+  /peers/{id}/deactivate:
+    post:
+      summary: Deactivate Peer
+      description: >-
+        Deactivate a peer. The ILP connector stops using it once the
+        deactivation takes effect. Deactivating a peer that is already
+        inactive returns 409.
+      tags:
+        - peers
+      operationId: deactivatePeer
+      parameters:
+        - name: id
+          in: path
+          required: true
+          description: The id of the peer.
+          schema:
+            type: string
+      responses:
+        '204':
+          description: The peer is deactivated.
+        '404':
+          description: Peer not found.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '409':
+          description: The peer is already inactive.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
   /assets:
     post:
       summary: Create Asset
@@ -126,6 +189,12 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/WalletAddressCreateResponse'
+        '400':
+          description: Invalid pathName (must be a single path segment).
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
         '409':
           description: Wallet address already exists.
           content:
@@ -265,7 +334,7 @@ paths:
         - name: id
           in: path
           required: true
-          description: The PAL identifier of the wallet address.
+          description: The identifier of the wallet address.
           schema:
             type: string
         - name: keyId
@@ -813,6 +882,39 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/ErrorResponse'
+    post:
+      summary: Revoke grant
+      description: >-
+        Revoke the grant associated with the provided id.
+      tags:
+        - payments
+      operationId: revokeGrant
+      parameters:
+        - name: id
+          in: path
+          description: Unique identifier for the grant
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: The request has succeeded.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Grant'
+        '404':
+          description: Grant not found.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '409':
+          description: The grant could not be revoked.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
   /rates:
     post:
       summary: Set Exchange Rate
@@ -940,11 +1042,15 @@ components:
       description: Connector settings for sending ILP packets to this peer.
       required:
         - endpoint
+        - callbackEndpoint
         - authToken
       properties:
         endpoint:
           type: string
-          description: The HTTP endpoint of the peer's ILP connector.
+          description: Where we POST ILP prepares to this peer.
+        callbackEndpoint:
+          type: string
+          description: Where we POST fulfills and rejects for prepares this peer sent us.
         authToken:
           type: string
           description: The bearer token sent to the peer when dispatching packets.
@@ -978,7 +1084,7 @@ components:
       properties:
         id:
           type: string
-          description: The unique identifier for the peer, shared by PAL and ILP.
+          description: The unique identifier for the peer.
         name:
           type: string
           description: A human-readable name for the peer.
@@ -1009,13 +1115,17 @@ components:
       type: object
       description: Schema for creating a new wallet address.
       required:
-        - address
+        - pathName
         - assetCode
         - publicName
       properties:
-        address:
+        pathName:
           type: string
-          description: The full wallet address (e.g., "example.com/alice").
+          description: >-
+            The wallet address path name (e.g., "alice"). Must be a single path
+            segment — values containing "/" or "://" are rejected. The full
+            wallet address URL is built from the configured Open Payments
+            resource server base URL plus this pathName.
         assetCode:
           type: string
           description: The code of the asset associated with this wallet address.

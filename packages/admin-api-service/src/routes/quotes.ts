@@ -10,7 +10,7 @@ import {
 } from 'admin-client-lib';
 import { randomUUID } from 'crypto';
 import { FastifyInstance, FastifyPluginOptions } from 'fastify';
-import { PalClient, parseAddressToDomainAndPathName } from 'pal-client-lib';
+import { PalClient, pathNameFromWalletAddress } from 'pal-client-lib';
 import {
   CreateQuoteResult,
   GetQuoteResult,
@@ -113,9 +113,10 @@ export async function quoteRoutes(
 
     const id = request.body.id ?? randomUUID();
 
-    const { domain, pathName } = parseAddressToDomainAndPathName(walletAddress);
-    const alias = await palClient.resolveWalletAddressAlias(domain, pathName);
-    if (!alias) {
+    const pathName = pathNameFromWalletAddress(walletAddress);
+
+    const wallet = await palClient.resolveWalletAddressByAlias(null, pathName);
+    if (!wallet) {
       return reply
         .status(404)
         .send({ error: `Wallet address '${walletAddress}' not found` });
@@ -125,7 +126,7 @@ export async function quoteRoutes(
       const result = await paymentsClient.createQuote(
         id,
         paymentIntent,
-        alias.walletAddressId,
+        wallet.id,
         walletAddress,
         debitAmount ? Number(debitAmount) : undefined,
         receiveAmount ? Number(receiveAmount) : undefined
